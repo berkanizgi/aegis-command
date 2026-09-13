@@ -1,0 +1,61 @@
+{
+  "name": "aegis-command",
+  "version": "0.1.0",
+  "private": true,
+  "author": "Berkan Izgi",
+  "type": "module",
+  "description": "Aegis — Personal Command OS. Voice, memory, missions and verified actions.",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite --configLoader runner --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build --configLoader runner",
+    "start": "electron .",
+    "test": "node --test tests/*.test.mjs",
+    "prepackage": "node node_modules/electron/install.js",
+    "package": "npm run build && electron-builder --win portable --publish never",
+    "preview": "node scripts/preview.mjs",
+    "test:desktop": "node scripts/smoke-desktop.mjs",
+    "format": "prettier --write src server electron scripts tests docs README.md package.json vite.config.ts"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.5.0",
+    "electron": "^44.3.0",
+    "electron-builder": "^26.0.0",
+    "prettier": "^3.9.6",
+    "typescript": "^5.8.0",
+    "vite": "^6.3.0"
+  },
+  "build": {
+    "appId": "app.aegis.command",
+    "productName": "Aegis",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "server/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "electronDist": "node_modules/electron/dist",
+    "win": {
+      "target": "portable",
+      "icon": "public/aegis-icon.ico",
+      "signExecutable": false
+    },
+    "portable": {
+      "artifactName": "Aegis-${version}-Windows.exe"
+    }
+  }
+}
