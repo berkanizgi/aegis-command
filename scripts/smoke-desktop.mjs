@@ -19,7 +19,7 @@ const app = await electron.launch({
       : []),
     ...(process.env.AEGIS_TEST_EXECUTABLE ? [] : [root]),
   ],
-  env: { ...process.env, AEGIS_DATA_DIR: dataDir },
+  env: { ...process.env, OPENAI_API_KEY: "", AEGIS_DATA_DIR: dataDir },
   timeout: 60000,
 });
 const fixture = http.createServer((req, res) => {

@@ -16,6 +16,7 @@
     "package": "npm run build && electron-builder --win portable --publish never",
     "preview": "node scripts/preview.mjs",
     "test:desktop": "node scripts/smoke-desktop.mjs",
+    "test:portable": "node scripts/smoke-portable.mjs",
     "format": "prettier --write src server electron scripts tests docs README.md package.json vite.config.ts"
   },
   "dependencies": {

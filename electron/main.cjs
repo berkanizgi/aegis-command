@@ -18,6 +18,7 @@ const os = require("node:os");
 const { pathToFileURL } = require("node:url");
 const { execFile } = require("node:child_process");
 const { createBrowserOperator } = require("./browser.cjs");
+const { isTrustedFile } = require("./trust.cjs");
 if (process.env.AEGIS_DATA_DIR)
   app.setPath("userData", path.resolve(process.env.AEGIS_DATA_DIR));
 app.setName("Aegis");
@@ -44,9 +45,10 @@ function trusted(sender) {
     sender === win.webContents &&
     (devUrl
       ? sender.getURL().startsWith(new URL(devUrl).origin + "/")
-      : sender
-          .getURL()
-          .startsWith(pathToFileURL(path.join(appRoot, "dist")).href + "/"))
+      : isTrustedFile(
+          sender.getURL(),
+          path.join(appRoot, "dist", "index.html"),
+        ))
   );
 }
 const foregroundScript = `Add-Type -TypeDefinition 'using System; using System.Text; using System.Runtime.InteropServices; public class AegisWindow { [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n); }'; $aegisText = New-Object System.Text.StringBuilder 512; [void][AegisWindow]::GetWindowText([AegisWindow]::GetForegroundWindow(), $aegisText, 512); $aegisText.ToString()`;

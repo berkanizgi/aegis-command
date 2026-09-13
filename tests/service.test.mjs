@@ -14,6 +14,8 @@ import path from "node:path";
 import { createService, validateArguments } from "../server/service.mjs";
 import { createStore } from "../server/store.mjs";
 import { confinedPath } from "../server/local-tools.mjs";
+// Never inherit a developer's real provider key into test fixtures.
+delete process.env.OPENAI_API_KEY;
 
 // All mutations use new, isolated test directories. No personal data or live accounts.
 async function setup(t, options = {}) {
