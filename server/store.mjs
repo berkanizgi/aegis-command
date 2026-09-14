@@ -16,6 +16,12 @@ export function defaultState() {
       voice: "cedar",
       workspace: "",
       autoSpeak: false,
+      voiceOnStartup: true,
+      economyMode: true,
+      masterProtocol: true,
+      homeCity: "",
+      speechHints:
+        "Bregenz, Dornbirn, Feldkirch, Bludenz, Hohenems, Vorarlberg, Österreich",
       autostart: false,
       dailyRequestLimit: 100,
     },
@@ -27,7 +33,17 @@ export function defaultState() {
     messages: [],
     focus: { active: false },
     shadow: { active: false, events: [] },
-    usage: { date: dateKey(), requests: 0, inputTokens: 0, outputTokens: 0 },
+    usage: {
+      date: dateKey(),
+      requests: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      realtimeInputTextTokens: 0,
+      realtimeInputAudioTokens: 0,
+      realtimeCachedTokens: 0,
+      realtimeOutputTextTokens: 0,
+      realtimeOutputAudioTokens: 0,
+    },
   };
 }
 
@@ -72,6 +88,7 @@ export async function createStore(dataDir, secureStorage) {
     ...base,
     ...document?.state,
     settings: { ...base.settings, ...document?.state?.settings },
+    usage: { ...base.usage, ...document?.state?.usage },
   };
   const secrets = new Map();
   const encrypted = document?.secrets || {};

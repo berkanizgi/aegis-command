@@ -84,6 +84,112 @@ test("memory, commitments and settings persist through restart", async (t) => {
   assert.equal(state.commitments[0].status, "done");
   assert.equal(state.settings.workspace, s.workspace);
 });
+test("connected personal Microsoft mail becomes an evidence-based visual briefing", async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "aegis-mail-"));
+  const store = await createStore(dir, mockCrypto);
+  for (const [field, value] of Object.entries({
+    clientId: "00000000-0000-4000-8000-000000000001",
+    tenantId: "consumers",
+    accessToken: "test-access-token",
+    refreshToken: "test-refresh-token",
+    expiresAt: String(Date.now() + 3600000),
+    verified: "true",
+    account: "person@hotmail.com",
+  }))
+    await store.setSecret(`connector.microsoft.${field}`, value);
+  await store.close();
+  const service = await createService({
+    dataDir: dir,
+    secureStorage: mockCrypto,
+    fetchImpl: async (url, options = {}) => {
+      assert.match(url, /graph\.microsoft\.com\/v1\.0\/me\/messages/);
+      if (url.endsWith("/mail-urgent/createReply")) {
+        assert.equal(options.method, "POST");
+        assert.equal(
+          JSON.parse(options.body).comment,
+          "Danke.\n\nIch bestätige den Termin.",
+        );
+        return response({
+          id: "reply-draft-1",
+          subject: "RE: Dringend: Abgabe morgen",
+          webLink: "https://outlook.live.com/mail/drafts/reply-draft-1",
+        });
+      }
+      if (url.includes("/reply-draft-1?"))
+        return response({
+          id: "reply-draft-1",
+          isDraft: true,
+          subject: "RE: Dringend: Abgabe morgen",
+          webLink: "https://outlook.live.com/mail/drafts/reply-draft-1",
+        });
+      return response({
+        value: [
+          {
+            id: "mail-urgent",
+            subject: "Dringend: Abgabe morgen",
+            from: {
+              emailAddress: {
+                name: "Lehrperson",
+                address: "school@example.com",
+              },
+            },
+            receivedDateTime: new Date().toISOString(),
+            bodyPreview: "Bitte die Unterlagen bis morgen einreichen.",
+            isRead: false,
+            importance: "high",
+            webLink: "https://outlook.live.com/mail/0/id/test",
+          },
+          {
+            id: "mail-normal",
+            subject: "Newsletter",
+            from: { emailAddress: { name: "News" } },
+            receivedDateTime: "2025-01-01T10:00:00Z",
+            bodyPreview: "Wochenrückblick",
+            isRead: true,
+            importance: "normal",
+          },
+        ],
+      });
+    },
+  });
+  t.after(() => service.close());
+  const result = await service.invoke("tools.execute", {
+    name: "world_mail",
+    args: { provider: "microsoft", limit: 12 },
+  });
+  assert.equal(result.providerLabel, "Microsoft Graph · Outlook");
+  assert.equal(result.messages[0].priority, "attention");
+  assert.equal(result.messages[0].from, "Lehrperson");
+  assert.ok(result.messages[0].reasons.length >= 3);
+  assert.equal(result.sources.length, 0);
+  assert.equal((await service.invoke("state")).desk.scene.kind, "mail");
+  const localReply = await service.invoke("mail.reply.prepare", {
+    messageId: "mail-urgent",
+    instruction: "Danke, ich akzeptiere.",
+  });
+  assert.equal(localReply.sent, false);
+  assert.equal(localReply.status, "ready");
+  const revised = await service.invoke("mail.reply.update", {
+    replyId: localReply.id,
+    body: "Danke.\n\nIch bestätige den Termin.",
+  });
+  assert.match(revised.body, /\n\n/);
+  const saved = await service.invoke("mail.reply.save", {
+    replyId: localReply.id,
+  });
+  assert.equal(saved.sent, false);
+  assert.equal(saved.status, "saved");
+  assert.match(saved.draftUrl, /outlook\.live\.com/);
+  await assert.rejects(
+    () => service.invoke("mail.reply.save", { replyId: localReply.id }),
+    /nicht mehr aktuell/,
+  );
+  await service.invoke("mail.reply.clear");
+  assert.equal(
+    (await service.invoke("state")).desk.scene.data.replyDraft,
+    undefined,
+  );
+});
 test("encrypted desktop persistence does not expose state or credentials", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "aegis-crypto-"));
   const store = await createStore(dir, mockCrypto);
@@ -383,19 +489,116 @@ test("AI write request produces an approval, not an immediate filesystem mutatio
 });
 test("Realtime exchange keeps long-lived credentials outside renderer and builds session", async (t) => {
   let session;
+  const offer = [
+    "v=0",
+    "o=- 123456789 2 IN IP4 127.0.0.1",
+    "s=-",
+    "t=0 0",
+    "a=group:BUNDLE 0",
+    "m=audio 9 UDP/TLS/RTP/SAVPF 111",
+    "c=IN IP4 0.0.0.0",
+    "a=mid:0",
+    "a=sendrecv",
+    "a=rtpmap:111 opus/48000/2",
+    "",
+  ].join("\r\n");
   const s = await setup(t, {
     fetchImpl: async (url, options) => {
       assert.equal(url, "https://api.openai.com/v1/realtime/calls");
-      session = JSON.parse(options.body.get("session"));
+      assert.equal(options.headers.Authorization, "Bearer fake-key");
+      // Serialize and parse the actual multipart request: SDP must survive intact,
+      // including the final CRLF required by strict SDP parsers (EOF regression).
+      const request = new Request(url, options);
+      assert.match(
+        request.headers.get("content-type"),
+        /^multipart\/form-data; boundary=/,
+      );
+      const multipart = await request.formData();
+      assert.equal(multipart.get("sdp"), offer);
+      session = JSON.parse(multipart.get("session"));
       return new Response("v=0\r\nanswer");
     },
   });
   await s.invoke("settings.update", { apiKey: "fake-key" });
-  const result = await s.invoke("realtime.session", { sdp: "v=0\r\noffer" });
+  const result = await s.invoke("realtime.session", { sdp: offer });
   assert.equal(result.sdp, "v=0\r\nanswer");
   assert.equal(session.type, "realtime");
-  assert.equal(session.tools[0].name, "aegis_command");
+  assert.ok(session.tools.some((t) => t.name === "aegis_command"));
+  assert.ok(session.tools.some((t) => t.name === "aegis_status"));
+  assert.ok(session.tools.some((t) => t.name === "world_mail_reply"));
+  assert.match(result.greetingInstructions, /Begrüße den Nutzer/);
+  assert.match(result.greetingInstructions, /keine Werkzeuge/);
+  assert.ok(!result.greetingInstructions.includes("fake-key"));
   assert.equal(session.audio.input.transcription.language, "de");
+  assert.match(session.audio.input.transcription.prompt, /Bregenz/);
+});
+test("Aegis knows real setup and local commitments without accessing accounts or credentials", async (t) => {
+  const s = await setup(t, {
+    fetchImpl: () => {
+      throw Error("Unexpected network access");
+    },
+  });
+  await s.invoke("settings.update", {
+    apiKey: "fake-private-api-key",
+    voiceOnStartup: false,
+  });
+  await s.invoke("connector.configure", {
+    id: "github",
+    token: "fake-private-github-token",
+  });
+  await s.invoke("commitments.save", {
+    title: "Review vorbereiten",
+    person: "QA",
+  });
+  const result = await s.invoke("app.overview");
+  assert.equal(result.app, "AEGIS");
+  assert.equal(result.ai.voiceOnStartup, false);
+  assert.equal(
+    result.integrations.find((c) => c.id === "github").configured,
+    true,
+  );
+  assert.equal(
+    result.integrations.find((c) => c.id === "github").connected,
+    false,
+  );
+  assert.equal(result.commitments[0].title, "Review vorbereiten");
+  assert.match(result.microsoftSetup, /Outlook Email.*ohne Azure/);
+  assert.ok(!JSON.stringify(result).includes("fake-private"));
+  const tool = await s.invoke("tools.execute", {
+    name: "aegis_status",
+    args: {},
+  });
+  assert.equal(tool.app, "AEGIS");
+  assert.equal((await s.invoke("state")).usage.requests, 0);
+  await assert.rejects(
+    () => s.invoke("settings.update", { voiceOnStartup: "true" }),
+    /Ungültige/,
+  );
+});
+test("invalid Realtime offers are rejected before any provider call", async (t) => {
+  let calls = 0;
+  const s = await setup(t, {
+    fetchImpl: async () => {
+      calls++;
+      throw Error("No provider call expected");
+    },
+  });
+  await s.invoke("settings.update", { apiKey: "fake-key" });
+  for (const sdp of [
+    undefined,
+    null,
+    42,
+    "",
+    "   ",
+    "not-sdp",
+    "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111",
+    "v=0\r\n",
+    "v=0\r\n" + "x".repeat(100000),
+  ]) {
+    await assert.rejects(() => s.invoke("realtime.session", { sdp }));
+  }
+  assert.equal(calls, 0);
+  assert.equal((await s.invoke("state")).usage.requests, 0);
 });
 test("browser operator is wired through approvals", async (t) => {
   const commands = [];

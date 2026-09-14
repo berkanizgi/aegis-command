@@ -60,6 +60,20 @@ const GOOGLE_SCOPES = [
 ];
 const MS_SCOPES =
   "openid profile offline_access User.Read Mail.ReadWrite Calendars.ReadWrite Tasks.ReadWrite";
+function validateMicrosoftClientId(value) {
+  if (value?.toLowerCase() === "74658136-14ec-4630-ad9b-26e160ff0fc6")
+    throw new Error(
+      "Diese ID gehört zum Microsoft-Verwaltungsportal, nicht zu Aegis. Bitte die Application (Client) ID deiner eigenen Appregistrierung verwenden.",
+    );
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      value || "",
+    )
+  )
+    throw new Error(
+      "Eine eigene Microsoft Application (Client) ID im GUID-Format wird benötigt. Kein Mailpasswort, keine E-Mail-Adresse und kein Client Secret eingeben.",
+    );
+}
 const TOKEN_FIELDS = [
   "accessToken",
   "refreshToken",
@@ -200,6 +214,14 @@ const TOOLS = [
     "Create an Outlook text draft without sending. Requires approval.",
     { to: STRING, subject: STRING, body: STRING },
     ["to", "subject", "body"],
+    "write",
+  ),
+  tool(
+    "microsoft",
+    "microsoft_mail_reply_draft",
+    "Create one Outlook reply draft tied to an exact existing message. It never sends mail. Requires approval.",
+    { id: STRING, body: STRING },
+    ["id", "body"],
     "write",
   ),
   tool(
@@ -464,6 +486,9 @@ export function createConnectors({
               : "disconnected")),
       message: states.get(id)?.message ?? "",
       account: cleanText(get(id, "account"), 200),
+      ...(id === "microsoft"
+        ? { tenantId: get(id, "tenantId") || "common" }
+        : {}),
     }));
   }
   const status = (id) => list().find((item) => item.id === id);
@@ -489,6 +514,8 @@ export function createConnectors({
         throw new Error(`${field} enthält ungültige Zeichen.`);
     }
     if (updates.url) updates.url = homeBase(updates.url);
+    if (id === "microsoft" && updates.clientId)
+      validateMicrosoftClientId(updates.clientId);
     if (
       updates.tenantId &&
       !/^(common|organizations|consumers|[a-zA-Z0-9.-]+)$/.test(
@@ -611,16 +638,30 @@ export function createConnectors({
           /^[a-z_]{1,60}$/.test(payload.error)
             ? payload.error
             : undefined;
-        const hint =
-          response.status === 401
-            ? "Anmeldung abgelaufen oder Zugangsdaten ungültig. Erneut verbinden."
-            : response.status === 403
-              ? "Zugriff verweigert. API-Freigabe und Berechtigungen prüfen."
-              : response.status === 429
-                ? "Anfragelimit erreicht. Später erneut versuchen."
-                : response.status === 404
-                  ? "Element nicht gefunden oder nicht zugänglich."
-                  : "Anfrage wurde vom Dienst nicht angenommen.";
+        const microsoftHint =
+          id === "microsoft" && oauth
+            ? (Array.isArray(payload?.error_codes)
+                ? payload.error_codes
+                : []
+              ).map(Number)
+            : [];
+        const hint = microsoftHint.some((code) =>
+          [50020, 500200, 16000].includes(code),
+        )
+          ? "Kontotyp oder Verzeichnis passt nicht. Für Hotmail/Outlook.com muss deine eigene Appregistrierung private Konten zulassen; common oder consumers verwenden. Portal-Anmeldung und Postfach-Anmeldung sind verschieden."
+          : microsoftHint.includes(700016)
+            ? "Die Client-ID wurde in diesem Verzeichnis nicht gefunden. Eigene Appregistrierung und Kontotyp prüfen."
+            : microsoftHint.includes(7000218)
+              ? "Öffentliche Client-Flows in deiner Appregistrierung aktivieren. Aegis benötigt für die Geräteanmeldung kein Client Secret."
+              : response.status === 401
+                ? "Anmeldung abgelaufen oder Zugangsdaten ungültig. Erneut verbinden."
+                : response.status === 403
+                  ? "Zugriff verweigert. API-Freigabe und Berechtigungen prüfen."
+                  : response.status === 429
+                    ? "Anfragelimit erreicht. Später erneut versuchen."
+                    : response.status === 404
+                      ? "Element nicht gefunden oder nicht zugänglich."
+                      : "Anfrage wurde vom Dienst nicht angenommen.";
         const error = new Error(
           `${PROVIDERS[id]?.name ?? id}: HTTP ${response.status}. ${hint}`,
         );
@@ -945,6 +986,7 @@ export function createConnectors({
       throw new Error(
         "Microsoft Application (Client) ID speichern; in Entra Public Client Flow aktivieren.",
       );
+    validateMicrosoftClientId(get("microsoft", "clientId"));
     cancel("microsoft");
     const value = await request(
       "microsoft",
@@ -1420,6 +1462,38 @@ export function createConnectors({
           ...verified,
         };
       }
+      case "microsoft_mail_reply_draft": {
+        const messageId = identifier(args.id, "id");
+        const body = str(args.body, "body", 20000);
+        const created = await api(
+          "microsoft",
+          `/me/messages/${messageId}/createReply`,
+          {
+            method: "POST",
+            body: { comment: body },
+          },
+        );
+        if (!created.id)
+          throw new Error(
+            "Outlook bestätigte keine Antwortentwurf-ID. Es wurde nichts gesendet.",
+          );
+        const verified = await verify(
+          () =>
+            api(
+              "microsoft",
+              `/me/messages/${identifier(created.id, "id")}?$select=id,isDraft,subject,webLink`,
+            ),
+          (item) => item.id === created.id && item.isDraft === true,
+        );
+        return {
+          created: true,
+          draftId: created.id,
+          sent: false,
+          subject: created.subject,
+          url: created.webLink,
+          ...verified,
+        };
+      }
       case "microsoft_calendar": {
         const range = dateRange(args, true);
         const data = await api(
@@ -1550,16 +1624,14 @@ export function createConnectors({
           (item) => !domain || item.entity_id?.startsWith(`${domain}.`),
         );
         return {
-          entities: filtered
-            .slice(0, 250)
-            .map((item) => ({
-              entityId: item.entity_id,
-              state: item.state,
-              name: item.attributes?.friendly_name,
-              unit: item.attributes?.unit_of_measurement,
-              brightness: item.attributes?.brightness,
-              lastChanged: item.last_changed,
-            })),
+          entities: filtered.slice(0, 250).map((item) => ({
+            entityId: item.entity_id,
+            state: item.state,
+            name: item.attributes?.friendly_name,
+            unit: item.attributes?.unit_of_measurement,
+            brightness: item.attributes?.brightness,
+            lastChanged: item.last_changed,
+          })),
           truncated: filtered.length > 250,
         };
       }

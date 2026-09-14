@@ -32,6 +32,7 @@ import {
   LayoutDashboard,
   Link2,
   LoaderCircle,
+  Mail,
   Maximize2,
   Mic,
   MicOff,
@@ -40,6 +41,7 @@ import {
   MoreHorizontal,
   Pause,
   Play,
+  PlugZap,
   Plus,
   Radio,
   Search,
@@ -66,6 +68,9 @@ import {
 } from "./lib/api";
 import { createVoiceSession } from "./lib/voice";
 import Orb from "./components/Orb";
+import MicrosoftSetup from "./components/MicrosoftSetup";
+import LiveDesk, { DeskLaunchers } from "./components/LiveDesk";
+import PluginHub from "./components/PluginHub";
 
 type Page =
   | "command"
@@ -73,6 +78,7 @@ type Page =
   | "memory"
   | "routines"
   | "workspace"
+  | "plugins"
   | "activity"
   | "settings";
 const navigation: {
@@ -86,6 +92,7 @@ const navigation: {
   { id: "memory", label: "Gedächtnis", icon: BrainCircuit },
   { id: "routines", label: "Automationen", icon: Workflow },
   { id: "workspace", label: "Workspace", icon: FolderOpen },
+  { id: "plugins", label: "Plugins", icon: PlugZap },
   { id: "activity", label: "Aktivitätsprotokoll", icon: Activity },
   { id: "settings", label: "Einstellungen", icon: Settings },
 ];
@@ -102,6 +109,13 @@ const statusNames: Record<string, string> = {
   success: "Erfolgreich",
 };
 const templates = [
+  {
+    icon: Mail,
+    title: "Inbox Intelligence",
+    subtitle: "Wichtiges erkennen. Belege sehen.",
+    prompt:
+      "Prüfe mein verbundenes Outlook-/Hotmail-Postfach, zeige mir die wichtigsten neuen E-Mails im Live Desk und erkläre kurz, warum sie priorisiert wurden. Nichts senden.",
+  },
   {
     icon: Radio,
     title: "Morning Command",
@@ -310,6 +324,8 @@ export default function App() {
     [focusMinutes, setFocusMinutes] = useState(45),
     [viewConversation, setViewConversation] = useState(false);
   const voice = useRef<ReturnType<typeof createVoiceSession> | null>(null),
+    voiceLevel = useRef(0),
+    startupAttempted = useRef(false),
     endRef = useRef<HTMLDivElement>(null),
     toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const notify = useCallback((text: string, error = false) => {
@@ -320,11 +336,15 @@ export default function App() {
   const refresh = useCallback(async () => {
     try {
       const next = await invoke("state");
-      setState({
+      setState((previous) => ({
         ...initialState,
         ...next,
+        desk:
+          (previous.desk?.revision ?? -1) > (next.desk?.revision ?? -1)
+            ? previous.desk
+            : next.desk,
         settings: { ...initialState.settings, ...next.settings },
-      });
+      }));
       setOnline(true);
     } catch {
       setOnline(false);
@@ -342,6 +362,18 @@ export default function App() {
       voice.current?.stop();
     };
   }, [refresh]);
+  useEffect(
+    () =>
+      window.aegis?.onDesk?.((desk: Row) => {
+        setState((previous) =>
+          (previous.desk?.revision ?? -1) > desk.revision
+            ? previous
+            : { ...previous, desk },
+        );
+        if (desk.visible) setPage("command");
+      }),
+    [],
+  );
   async function act(operation: string, payload: Row = {}, message?: string) {
     if (operation === "missions.pause") {
       try {
@@ -375,6 +407,7 @@ export default function App() {
     "closed",
   ].includes(voiceStatus);
   async function toggleVoice() {
+    startupAttempted.current = true;
     if (voiceActive) {
       await voice.current?.stop();
       setVoiceStatus("idle");
@@ -392,12 +425,14 @@ export default function App() {
       voice.current = createVoiceSession({
         invoke,
         onStatus: (status: string) => setVoiceStatus(status),
+        onAudioLevel: (level: number) => {
+          voiceLevel.current = level;
+        },
         onTranscript: (role: string, text: string) => {
           setVoiceLines((lines) => [
             ...lines.slice(-15),
             { role, content: text },
           ]);
-          setViewConversation(true);
           refresh();
         },
         onError: (error: any) => {
@@ -414,10 +449,41 @@ export default function App() {
     }
   }
   useEffect(() => {
+    if (
+      loading ||
+      !online ||
+      !window.aegis ||
+      startupAttempted.current ||
+      !state.settings.voiceOnStartup ||
+      !state.settings.hasApiKey ||
+      state.settings.provider !== "openai"
+    )
+      return;
+    // Cancel the scheduled start on unmount/StrictMode cleanup; never reconnect
+    // from the state polling loop after a deliberate stop or a provider error.
+    const timer = setTimeout(() => {
+      void toggleVoice();
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [
+    loading,
+    online,
+    state.settings.voiceOnStartup,
+    state.settings.hasApiKey,
+    state.settings.provider,
+  ]);
+  useEffect(() => {
+    if (!state.settings.hasApiKey || state.settings.provider !== "openai")
+      voice.current?.stop();
+  }, [state.settings.hasApiKey, state.settings.provider]);
+  useEffect(() => {
     const handler = () => {
       void toggleVoice();
     };
     const unsubscribe = window.aegis?.onVoiceToggle?.(handler);
+    const stopSubscription = window.aegis?.onVoiceStop?.(() =>
+      voice.current?.stop(),
+    );
     const keyboard = (e: KeyboardEvent) => {
       if (e.code === "Space" && e.ctrlKey) {
         e.preventDefault();
@@ -429,6 +495,7 @@ export default function App() {
     window.addEventListener("keydown", keyboard);
     return () => {
       unsubscribe?.();
+      stopSubscription?.();
       window.removeEventListener("aegis:voice-toggle", handler);
       window.removeEventListener("keydown", keyboard);
     };
@@ -477,12 +544,16 @@ export default function App() {
       : new Date(now).getHours() < 18
         ? "Willkommen zurück"
         : "Guten Abend";
+  const addressTitle = state.settings.masterProtocol
+    ? "Meister"
+    : state.settings.name || "Boss";
   const title = {
     command: "Command Center",
     missions: "Mission Control",
     memory: "Dein Gedächtnis",
     routines: "Automationen",
     workspace: "Dein Workspace",
+    plugins: "Plugin Control",
     activity: "Aktivitätsprotokoll",
     settings: "Systemeinstellungen",
   }[page];
@@ -521,7 +592,7 @@ export default function App() {
         </div>
         <span className="nav-label">CONTROL</span>
         <nav>
-          {navigation.slice(0, 5).map((n) => (
+          {navigation.slice(0, 6).map((n) => (
             <button
               className={`nav-item ${page === n.id ? "selected" : ""}`}
               key={n.id}
@@ -538,7 +609,7 @@ export default function App() {
         </nav>
         <span className="nav-label system-label">SYSTEM</span>
         <nav>
-          {navigation.slice(5).map((n) => (
+          {navigation.slice(6).map((n) => (
             <button
               className={`nav-item ${page === n.id ? "selected" : ""}`}
               key={n.id}
@@ -640,7 +711,7 @@ export default function App() {
                     <span /> YOUR WORLD. IN SYNC.
                   </div>
                   <h1>
-                    {greeting}, <span>{state.settings.name || "Boss"}.</span>
+                    {greeting}, <span>{addressTitle}.</span>
                   </h1>
                   <p>
                     {activeMissions.length
@@ -653,7 +724,19 @@ export default function App() {
                   Neue Mission
                 </Button>
               </div>
-              <div className="command-grid">
+              {!state.desk?.visible && (
+                <DeskLaunchers
+                  open={() => {
+                    void act("tools.execute", {
+                      name: "world_view",
+                      args: { action: "open" },
+                    });
+                  }}
+                />
+              )}
+              <div
+                className={`command-grid ${state.desk?.visible ? "desk-open" : ""}`}
+              >
                 <section className="core-panel panel">
                   <div className="panel-top">
                     <div className="micro-label">
@@ -665,41 +748,61 @@ export default function App() {
                     <button
                       className="text-button"
                       onClick={() => setViewConversation(!viewConversation)}
+                      aria-expanded={viewConversation}
+                      aria-controls="aegis-conversation"
                     >
-                      {viewConversation ? "Kern anzeigen" : "Konversation"}
+                      {viewConversation ? "Chat ausblenden" : "Chat anzeigen"}
                       <ChevronRight size={13} />
                     </button>
                   </div>
-                  {!viewConversation ? (
+                  <>
                     <div className="orb-stage">
                       <div className="orb-corner top-left">
                         <span>VOICE INTERFACE</span>
-                        <strong>{voiceActive ? "CONNECTED" : "STANDBY"}</strong>
+                        <strong>
+                          {voiceStatus === "connecting"
+                            ? "CONNECTING"
+                            : voiceActive
+                              ? "CONNECTED"
+                              : "STANDBY"}
+                        </strong>
                       </div>
                       <div className="orb-corner top-right">
                         <span>CONTEXT ENGINE</span>
                         <strong>{state.memories.length} MEMORIES</strong>
                       </div>
-                      <Orb active={voiceActive || !!busy} />
+                      <Orb
+                        active={voiceActive || !!busy}
+                        status={voiceStatus}
+                        audioLevel={voiceLevel}
+                      />
                       <div className="orb-caption">
                         <span className="eyebrow">
-                          {busy === "chat"
-                            ? "PROCESSING YOUR REQUEST"
-                            : voiceActive
-                              ? "LIVE VOICE CONNECTION"
-                              : "AWAITING YOUR COMMAND"}
+                          {voiceStatus === "speaking"
+                            ? "AEGIS IS SPEAKING"
+                            : busy === "chat" || voiceStatus === "thinking"
+                              ? "PROCESSING YOUR REQUEST"
+                              : voiceActive
+                                ? "LIVE VOICE CONNECTION"
+                                : "AWAITING YOUR COMMAND"}
                         </span>
                         <h2>
-                          {busy === "chat"
-                            ? "Ich kümmere mich darum."
-                            : voiceActive
-                              ? "Ich höre zu, Boss."
-                              : "Was bewegen wir heute?"}
+                          {voiceStatus === "speaking"
+                            ? "Ich bin ganz bei dir."
+                            : busy === "chat" || voiceStatus === "thinking"
+                              ? "Ich kümmere mich darum."
+                              : voiceActive
+                                ? voiceStatus === "connecting"
+                                  ? "Ich verbinde mich…"
+                                  : `Ich höre zu, ${addressTitle}.`
+                                : "Was bewegen wir heute?"}
                         </h2>
                         <p>
                           {voiceActive
                             ? "Sprich natürlich. Du kannst mich jederzeit unterbrechen."
-                            : "Sprich mit Aegis oder starte eine Mission."}
+                            : hasAI
+                              ? "Sprache pausiert. Du bestimmst, wann ich wieder zuhöre."
+                              : "Verbinde deine KI in Einstellungen. Danach begrüße ich dich beim Start."}
                         </p>
                       </div>
                       <div className="orb-coordinate left">01 / CORE</div>
@@ -707,8 +810,12 @@ export default function App() {
                         {hasAI ? "AI CONFIGURED" : "LOCAL MODE"}
                       </div>
                     </div>
-                  ) : (
-                    <div className="conversation">
+                  </>
+                  {viewConversation && (
+                    <div
+                      className="conversation voice-transcript"
+                      id="aegis-conversation"
+                    >
                       <div className="conversation-title">
                         <AudioLines size={16} />
                         <span>Deine Konversation</span>
@@ -762,7 +869,7 @@ export default function App() {
                       <div ref={endRef} />
                     </div>
                   )}
-                  <div className="voice-control">
+                  <div className="voice-control" aria-live="polite">
                     <button
                       className={`voice-button ${voiceActive ? "active" : ""}`}
                       onClick={toggleVoice}
@@ -782,13 +889,19 @@ export default function App() {
                     </button>
                     <div>
                       <strong>
-                        {voiceActive
-                          ? "Sprachverbindung aktiv"
-                          : "Mit Aegis sprechen"}
+                        {voiceStatus === "speaking"
+                          ? "Aegis spricht"
+                          : voiceStatus === "thinking"
+                            ? "Aegis denkt nach"
+                            : voiceActive
+                              ? voiceStatus === "connecting"
+                                ? "Verbindung wird aufgebaut"
+                                : "Mikrofon aktiv · Ich höre zu"
+                              : "Mit Aegis sprechen"}
                       </strong>
                       <span>
                         {voiceActive ? (
-                          "Klicken zum Beenden"
+                          "Escape oder Mikrofon klicken zum Beenden · API-Kosten"
                         ) : (
                           <>
                             Mikrofon aktivieren <kbd>Ctrl</kbd>
@@ -805,39 +918,55 @@ export default function App() {
                             height: `${5 + ((i * 7) % 16)}px`,
                             animationDelay: `${i * 0.09}s`,
                           }}
-                          className={voiceActive ? "animated" : ""}
+                          className={
+                            voiceStatus === "speaking" ? "animated" : ""
+                          }
                         />
                       ))}
                     </span>
                   </div>
-                  <form className="composer" onSubmit={sendChat}>
-                    <Command size={17} />
-                    <input
-                      value={composer}
-                      onChange={(e) => setComposer(e.target.value)}
-                      placeholder="Gib mir einen Auftrag, Boss…"
-                      aria-label="Nachricht an Aegis"
-                      disabled={busy === "chat"}
-                    />
-                    <button
-                      type="submit"
-                      disabled={!composer.trim() || !!busy}
-                      aria-label="Nachricht senden"
-                    >
-                      {busy === "chat" ? (
-                        <LoaderCircle size={17} className="spin" />
-                      ) : (
-                        <ArrowUp size={18} />
-                      )}
-                    </button>
-                  </form>
+                  {viewConversation && (
+                    <form className="composer" onSubmit={sendChat}>
+                      <Command size={17} />
+                      <input
+                        value={composer}
+                        onChange={(e) => setComposer(e.target.value)}
+                        placeholder="Gib mir einen Auftrag, Boss…"
+                        aria-label="Nachricht an Aegis"
+                        disabled={busy === "chat"}
+                      />
+                      <button
+                        type="submit"
+                        disabled={!composer.trim() || !!busy}
+                        aria-label="Nachricht senden"
+                      >
+                        {busy === "chat" ? (
+                          <LoaderCircle size={17} className="spin" />
+                        ) : (
+                          <ArrowUp size={18} />
+                        )}
+                      </button>
+                    </form>
+                  )}
                   <div className="composer-footer">
                     <span>
                       <ShieldCheck size={11} /> Aktionen bleiben nachvollziehbar
                     </span>
-                    <span>ENTER TO SEND</span>
+                    <span>
+                      {viewConversation
+                        ? "ENTER TO SEND"
+                        : "VOICE FIRST · CHAT OPTIONAL"}
+                    </span>
                   </div>
                 </section>
+                {state.desk?.visible && (
+                  <LiveDesk
+                    desk={state.desk}
+                    homeCity={state.settings.homeCity || ""}
+                    notify={notify}
+                    obscured={!!modal}
+                  />
+                )}
                 <aside className="right-rail">
                   <section className="panel missions-widget">
                     <div className="panel-top">
@@ -962,7 +1091,7 @@ export default function App() {
                       <div className="focus-symbol">
                         <AudioLines size={19} />
                       </div>
-                      <span>FOCUS PROTOCOL</span>
+                      <span>FOCUS SPRINT · OPTIONALER TIMER</span>
                       <span className="green-dot" />
                     </div>
                     <h3>
@@ -973,12 +1102,12 @@ export default function App() {
                               2,
                               "0",
                             )}:${(focusRemaining % 60).toString().padStart(2, "0")}`
-                        : "Raum für Deep Work."}
+                        : "Ungestört an einer Sache arbeiten."}
                     </h3>
                     <p>
                       {state.focus.active
                         ? "Eine Sache. Deine volle Aufmerksamkeit."
-                        : "Ein Ziel. Keine Umwege."}
+                        : "Du wählst eine Dauer. Aegis erinnert dich am Ende; andere Apps werden nicht blockiert."}
                     </p>
                     <div className="focus-actions">
                       {!state.focus.active && (
@@ -1080,6 +1209,8 @@ export default function App() {
                           "Wiederkehrende Arbeit bekommt einen eigenen Ablauf.",
                         workspace:
                           "Deine Dateien. Bewusst freigegeben und direkt erreichbar.",
+                        plugins:
+                          "Fertige Fähigkeiten verbinden. Konten bleiben unter deiner Kontrolle.",
                         activity: "Jeder Schritt hat eine Spur.",
                         settings:
                           "Dein Assistent. Deine Werkzeuge. Deine Regeln.",
@@ -1543,6 +1674,7 @@ export default function App() {
                   )}
                 </section>
               )}
+              {page === "plugins" && <PluginHub notify={notify} />}
               {page === "settings" && (
                 <SettingsPage
                   state={state}
@@ -1571,7 +1703,7 @@ export default function App() {
                 ? "OPENAI CONFIGURED"
                 : "AI NOT CONNECTED"}
             <span className="status-divider" />
-            AEGIS v0.1
+            AEGIS v0.5.0
           </div>
         </footer>
       </div>
@@ -2278,10 +2410,14 @@ const connectorMeta: Record<
     icon: Layers3,
     label: "Microsoft 365",
     fields: [
-      { key: "clientId", label: "Application (Client) ID" },
+      {
+        key: "clientId",
+        label: "Application (Client) ID",
+        placeholder: "Eigene App-ID · xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      },
       { key: "tenantId", label: "Tenant ID", placeholder: "common" },
     ],
-    help: "Registriere eine App in Microsoft Entra und aktiviere öffentliche Client-Flows für die Geräteanmeldung.",
+    help: "Private Outlook-/Hotmail-Konten und Microsoft 365. Einrichtung und Postfach-Anmeldung sind zwei verschiedene Schritte.",
     link: "https://entra.microsoft.com/",
   },
   homeassistant: {
@@ -2340,6 +2476,11 @@ function SettingsPage({
       voice: values.voice,
       dailyRequestLimit: Number(values.dailyRequestLimit),
       autoSpeak: !!values.autoSpeak,
+      voiceOnStartup: !!values.voiceOnStartup,
+      economyMode: !!values.economyMode,
+      masterProtocol: !!values.masterProtocol,
+      homeCity: values.homeCity || "",
+      speechHints: values.speechHints || "",
       autostart: !!values.autostart,
     };
     if (values.apiKey) payload.apiKey = values.apiKey;
@@ -2388,11 +2529,16 @@ function SettingsPage({
             Das Gespräch und die Planung laufen über deinen eigenen KI-Zugang.
             API-Nutzung wird direkt beim Anbieter abgerechnet.
           </p>
-          <div className="form-note">
+          <div className="form-note usage-readout">
             Heute (UTC): {state.usage.requests || 0} /{" "}
             {state.settings.dailyRequestLimit} API-Aufrufe ·{" "}
             {(state.usage.inputTokens || 0) + (state.usage.outputTokens || 0)}{" "}
-            Text-Tokens. Audio nicht eingerechnet.
+            Text-Tokens ·{" "}
+            {(state.usage.realtimeInputAudioTokens || 0) +
+              (state.usage.realtimeOutputAudioTokens || 0)}{" "}
+            Audio-Tokens · {state.usage.realtimeCachedTokens || 0} davon als
+            Realtime-Cache gemeldet. Das ist eine lokale Zählung, kein
+            verbindlicher Rechnungsbetrag.
           </div>
           <div className="form-grid">
             <Field label="KI-Anbieter">
@@ -2491,6 +2637,13 @@ function SettingsPage({
                   ))}
                 </select>
               </Field>
+              <div className="form-note cost-guidance">
+                Empfohlene günstige Kombination: <b>gpt-4.1-mini</b> für Text
+                und <b>gpt-realtime-mini</b> für Sprache. Das Sprachmodell ist
+                der größere Kostentreiber; längere gesprochene Antworten und ein
+                wachsender Dialog erhöhen den Verbrauch. Web-Recherche hat
+                zusätzlich Suchkosten.
+              </div>
             </>
           ) : (
             <>
@@ -2534,6 +2687,74 @@ function SettingsPage({
               onChange={(e) => set("dailyRequestLimit", Number(e.target.value))}
             />
           </Field>
+          <label className="toggle-row economy-toggle">
+            <div>
+              <strong>Kostenwächter · empfohlen</strong>
+              <span>
+                Begrenzt den aktiven Sprachkontext auf 6.000 Tokens, hält
+                Antworten kurz und reduziert Text-/Rechercheausgaben. Dein
+                lokales Gedächtnis und „Merke dir“-Einträge bleiben erhalten.
+              </span>
+            </div>
+            <input
+              type="checkbox"
+              checked={!!values.economyMode}
+              onChange={(e) => set("economyMode", e.target.checked)}
+            />
+          </label>
+          <label className="toggle-row">
+            <div>
+              <strong>Meister-Protokoll</strong>
+              <span>
+                Aegis bleibt als loyaler strategischer Berater in seiner Rolle
+                und spricht dich in jeder Antwort mit „Meister“ an. Bei falschen
+                Annahmen widerspricht er respektvoll statt sie zu bestätigen.
+              </span>
+            </div>
+            <input
+              type="checkbox"
+              checked={!!values.masterProtocol}
+              onChange={(e) => set("masterProtocol", e.target.checked)}
+            />
+          </label>
+          <Field label="Standardort für Wetter & Karten (optional)">
+            <input
+              value={values.homeCity || ""}
+              placeholder="Stadt, Land – keine automatische Ortung"
+              onChange={(e) => set("homeCity", e.target.value)}
+            />
+            <small className="form-note">
+              Für „Wie wird das Wetter hier?“ Sonst fragt Aegis nach dem Ort.
+              Live Desk: Wetter, Karte und Kurse ohne zusätzliche API-Schlüssel;
+              Web-Recherche über OpenAI (Suchkosten) oder Tavily.
+            </small>
+          </Field>
+          <Field
+            label="Spracherkennung · wichtige Namen & Orte"
+            hint="Kommagetrennte Hinweise verbessern Eigennamen, ohne ein größeres Sprachmodell zu wählen."
+          >
+            <textarea
+              rows={3}
+              value={values.speechHints || ""}
+              placeholder="Bregenz, Vorarlberg, Projektname, Person …"
+              onChange={(e) => set("speechHints", e.target.value)}
+            />
+          </Field>
+          <label className="toggle-row">
+            <div>
+              <strong>Beim Öffnen begrüßen & zuhören</strong>
+              <span>
+                Startet das Mikrofon und eine kostenpflichtige KI-Sprachsitzung
+                automatisch. Maximal 15 Minuten; Escape beendet sie. Kein
+                automatischer Neustart nach Fehlern.
+              </span>
+            </div>
+            <input
+              type="checkbox"
+              checked={!!values.voiceOnStartup}
+              onChange={(e) => set("voiceOnStartup", e.target.checked)}
+            />
+          </label>
           <label className="toggle-row">
             <div>
               <strong>Textantworten vorlesen</strong>
@@ -2642,32 +2863,80 @@ function SettingsPage({
               {expanded === id && (
                 <div className="connector-body">
                   <p>{meta.help}</p>
-                  <a
-                    className="inline-link"
-                    href={meta.link}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Zugang einrichten
-                    <ExternalLink size={12} />
-                  </a>
+                  {id === "microsoft" ? (
+                    <MicrosoftSetup />
+                  ) : (
+                    <a
+                      className="inline-link"
+                      href={meta.link}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Zugang einrichten
+                      <ExternalLink size={12} />
+                    </a>
+                  )}
                   {meta.fields.map((f) => (
                     <Field key={f.key} label={f.label}>
-                      <input
-                        type={f.secret ? "password" : "text"}
-                        autoComplete="off"
-                        placeholder={
-                          f.placeholder ||
-                          "Nicht im Klartext gespeichert anzeigen"
-                        }
-                        value={credentials[id]?.[f.key] || ""}
-                        onChange={(e) =>
-                          setCredentials((v) => ({
-                            ...v,
-                            [id]: { ...v[id], [f.key]: e.target.value },
-                          }))
-                        }
-                      />
+                      {id === "microsoft" && f.key === "tenantId" ? (
+                        <>
+                          <select
+                            aria-label="Microsoft-Kontotyp"
+                            value={
+                              credentials[id]?.tenantId ??
+                              connector.tenantId ??
+                              "common"
+                            }
+                            onChange={(e) =>
+                              setCredentials((v) => ({
+                                ...v,
+                                [id]: { ...v[id], tenantId: e.target.value },
+                              }))
+                            }
+                          >
+                            <option value="common">
+                              Privat + Arbeit/Schule (common)
+                            </option>
+                            <option value="consumers">
+                              Nur privat · Hotmail / Outlook.com (consumers)
+                            </option>
+                            <option value="organizations">
+                              Nur Arbeit oder Schule (organizations)
+                            </option>
+                            {connector.tenantId &&
+                              ![
+                                "common",
+                                "consumers",
+                                "organizations",
+                              ].includes(connector.tenantId) && (
+                                <option value={connector.tenantId}>
+                                  Eigenes Verzeichnis ({connector.tenantId})
+                                </option>
+                              )}
+                          </select>
+                          <small className="form-note">
+                            Für Hotmail muss die Appregistrierung private Konten
+                            unterstützen. „common“ verbindet private und
+                            Organisationskonten; es umgeht keine Berechtigungen.
+                          </small>
+                        </>
+                      ) : (
+                        <input
+                          type={f.secret ? "password" : "text"}
+                          autoComplete="off"
+                          placeholder={
+                            f.placeholder ||
+                            "Nicht im Klartext gespeichert anzeigen"
+                          }
+                          value={credentials[id]?.[f.key] || ""}
+                          onChange={(e) =>
+                            setCredentials((v) => ({
+                              ...v,
+                              [id]: { ...v[id], [f.key]: e.target.value },
+                            }))
+                          }
+                        />
+                      )}
                     </Field>
                   ))}
                   <div className="connector-buttons">
@@ -2694,9 +2963,16 @@ function SettingsPage({
                       Speichern
                     </Button>
                     {["google", "microsoft"].includes(id) && (
-                      <Button disabled={!!busy} onClick={() => connect(id)}>
+                      <Button
+                        disabled={
+                          !!busy ||
+                          !connector.configured ||
+                          Object.values(credentials[id] || {}).some(Boolean)
+                        }
+                        onClick={() => connect(id)}
+                      >
                         <ExternalLink size={13} />
-                        Anmelden
+                        {id === "microsoft" ? "Postfach anmelden" : "Anmelden"}
                       </Button>
                     )}
                     <Button
@@ -2730,6 +3006,12 @@ function SettingsPage({
                       </Button>
                     ) : null}
                   </div>
+                  {id === "microsoft" && !connector.configured && (
+                    <p className="form-note">
+                      Noch keine eigene Client-ID gespeichert. Die
+                      Postfach-Anmeldung wird danach freigeschaltet.
+                    </p>
+                  )}
                   {authInfo[id] && (
                     <div className="auth-info">
                       {authInfo[id].message && <p>{authInfo[id].message}</p>}

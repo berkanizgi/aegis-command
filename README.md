@@ -2,17 +2,29 @@
 
 Dein persönliches Command Center für Windows. Stimme, Projektgedächtnis und nachvollziehbare Aktionen – mit einer Oberfläche, die nach Zukunft aussieht.
 
-**Status: erste ausführbare Version 0.1.0, kein universeller autonomer Computer-Agent.** Lokale Funktionen sind ohne KI nutzbar. Live-Sprache, freie KI-Aufträge und Kontodaten benötigen eigene Zugangsdaten. Die App enthält keine Beispieldaten und keine vorgetäuschten Verbindungen.
+**Status: Version 0.5.0, kein universeller autonomer Computer-Agent.** Lokale Funktionen sind ohne KI nutzbar. Live-Sprache, freie KI-Aufträge und Kontodaten benötigen eigene Zugangsdaten. Die App enthält keine Beispieldaten und keine vorgetäuschten Verbindungen.
+
+0.5.0 ergänzt **Plugin Control** mit dem offiziellen Codex-/ChatGPT-Plugin-Katalog. Für privates Hotmail ist `Outlook Email` nun der empfohlene Weg ohne eigene Azure-Appregistrierung: Tageslagebild, scrollbar geladene Nachrichten, Belege und ein kontrollierter Antwortablauf. Aegis formuliert lokal, du prüfst und bearbeitest, ein bewusster Klick speichert nur einen Outlook-Entwurf; **Senden bleibt ausschließlich in Outlook bei dir**. [Plugin-Einrichtung und Grenzen](docs/PLUGINS.md).
+
+0.4.0 ergänzt den standardmäßig aktiven **Kostenwächter**, echte Realtime-Tokenmessung, das konsequente Meister-Protokoll sowie **Inbox Intelligence** für ein verbundenes Outlook-/Hotmail- oder Gmail-Postfach. Die Rechercheansicht zeigt ihren tatsächlichen Anfrage-, Quellen- und Evidenzpfad animiert. [Kosten und sinnvolle Modelle](docs/KOSTEN.md).
+
+0.3.0 ergänzt den **Live Desk**: Sprachkern links, rechts Wetter mit Globus/Stundenansicht, interaktive Ortskarte, Währungs-/Kryptodiagramme und Recherche mit Quellen im App-Fenster. Wetter und Kurse verwenden öffentliche Datenquellen ohne zusätzliche Schlüssel. Recherche nutzt Tavily oder die OpenAI-Websuche (Zusatzkosten). [Anleitung, Sprachbeispiele und Grenzen](docs/LIVE-DESK.md).
+
+0.2.0 macht Sprache zur Hauptansicht: automatische Begrüßung beim Öffnen, ein auf empfangenes Audio reagierender Kern und ein optional ausklappbarer Chat. Aegis kennt seinen lokalen App-/Verbindungsstatus und erklärt fehlende Einrichtung. Eine Microsoft-Anleitung trennt App-Registrierung und Postfach-Anmeldung; sie ersetzt keine eigene OAuth-Registrierung.
+
+0.1.1 behebt den Sprachstartfehler `failed to unmarshal SDP: EOF`: WebRTC-Angebote werden inklusive abschließendem CRLF unverändert übertragen. Ein Regressionstest prüft den tatsächlichen Multipart-Inhalt. Zum Aktualisieren die alte App über das Tray-Menü vollständig beenden; Einstellungen werden nicht zurückgesetzt.
 
 ![Aegis Command Center](docs/command-center.png)
 
 ## In drei Schritten starten
 
-1. `Aegis-0.1.0-Windows.exe` aus dem bereitgestellten Windows-Paket starten. Keine Node-Installation nötig. Die persönliche Build-Version ist nicht code-signiert; Windows kann einen Hinweis auf einen unbekannten Herausgeber zeigen. Herkunft und Prüfsumme prüfen, keine Windows-Schutzfunktionen abschalten.
+1. Für einen festen App-Pfad `release/win-unpacked/Aegis.exe` starten (den ganzen Ordner zusammenlassen). Alternativ `Aegis-0.5.0-Windows.exe` als selbstentpackende Einzeldatei. Keine Node-Installation nötig. Der persönliche Build ist nicht code-signiert; Windows kann einen unbekannten Herausgeber melden. Herkunft prüfen, keine Windows-Schutzfunktionen abschalten.
 2. **Einstellungen → KI-Verbindung:** eigenen OpenAI API-Schlüssel eintragen, speichern und „KI-Verbindung testen“ wählen. Ein ChatGPT-/Codex-Abo ersetzt kein API-Guthaben. Den Schlüssel nur in der App eingeben, niemals in GitHub oder einen Chat kopieren.
-3. **Workspace:** einen konkreten Projektordner freigeben. Danach Mikrofon aktivieren oder einen Auftrag schreiben. Weitere Konten unter Einstellungen → Verbindungen einrichten.
+3. **Workspace:** einen konkreten Projektordner freigeben. Mit eingerichtetem OpenAI-Zugang beginnt in der Desktop-App automatisch die Sprachbegrüßung. Für Texteingaben „Chat anzeigen“ wählen. Weitere Konten unter Einstellungen → Verbindungen einrichten.
 
 Mit **Ctrl + Space** schaltest du die Sprache in Aegis um. **Ctrl + Shift + Space** öffnet Aegis systemweit und schaltet die Sprache um. Das Kreuz schließt das Fenster in den Tray; über das Tray-Menü → „Aegis beenden“ wird die App vollständig beendet. Autostart ist optional und muss in Einstellungen aktiviert werden.
+
+**Mikrofon und Kosten:** „Beim Öffnen begrüßen & zuhören“ ist standardmäßig an, auch nach diesem Update. Bei eingerichtetem OpenAI-Zugang aktiviert es beim Laden der Desktop-App das Mikrofon und eine kostenpflichtige Realtime-Sitzung. In Einstellungen abschaltbar. Escape oder der Sprachknopf beendet die Sitzung; nach spätestens 15 Minuten wird sie automatisch beendet. Kein automatischer Neustart nach Abbruch oder Fehler. Die Begrüßung kennt lokale Einstellungen und gespeicherte Aufgaben, behauptet aber keine gerade erfolgte Mail-/Kalenderprüfung.
 
 ## Was daran mehr ist als ein Sprachchat
 
@@ -26,7 +38,9 @@ Mit **Ctrl + Space** schaltest du die Sprache in Aegis um. **Ctrl + Shift + Spac
 | Screen Wingman        | Ein vom Nutzer ausgewähltes Fenster-/Bildschirmbild einmalig zur KI übertragen und analysieren; Bilder werden nicht in Aegis gespeichert.                                                      |
 | Browser Operator      | Eigener sichtbarer Browser: HTTP(S)-Seiten öffnen, Text/Elemente lesen, konkrete Felder ausfüllen und klicken. URL, Elementlabel und Text müssen freigegeben werden.                           |
 | Verifizierte Berichte | Neue Markdown-Dateien ausschließlich in `Aegis Reports` des ausgewählten Workspaces; kein Überschreiben. Rückgängig verschiebt unveränderte Berichte in `.aegis-undo`.                         |
-| Focus Protocol        | Lokaler Timer mit Desktop-Hinweis. Andere Apps oder Benachrichtigungen werden nicht blockiert.                                                                                                 |
+| Focus Sprint          | Optionaler lokaler Timer mit Desktop-Hinweis am Ende. Andere Apps oder Benachrichtigungen werden nicht blockiert.                                                                              |
+| Inbox Intelligence    | Tageslagebild plus scrollbares Outlook-/Hotmail- oder Gmail-Postfach als Belegkarten; sichtbarer, bearbeitbarer Antwortentwurf. Kein automatisches Senden.                                     |
+| Plugin Control        | Offizieller Codex-/ChatGPT-Katalog mit Suche, Status und Anbieter-Anmeldung für Outlook, Kalender, Dateien, Aufgaben, Entwicklung und weitere Fähigkeiten.                                     |
 | Nachvollziehbarkeit   | Lokales Aktivitätsprotokoll, explizite Fehler und getrennte Angaben „angefordert“, „erstellt“ und „verifiziert“.                                                                               |
 
 ### Ideen für erste Aufträge
@@ -43,13 +57,13 @@ Bei Aufgaben, die Informationen aus vorherigen Schritten benötigen, zuerst den 
 
 ## Verbindungen
 
-GitHub; Google Gmail, Kalender und Drive; Microsoft Outlook, Kalender und To Do; Home Assistant; Tavily-Websuche. [Einrichtung und Berechtigungen](docs/VERBINDUNGEN.md).
+GitHub; Google Gmail, Kalender und Drive; Microsoft Outlook/Hotmail, Kalender und To Do; Home Assistant; Tavily-Websuche sowie der offizielle Plugin-Katalog. Für privates Hotmail zuerst **Control Panel → Plugins → Outlook Email** verwenden; dafür ist keine eigene Azure-Appregistrierung nötig. Die direkte Microsoft-Graph-Verbindung bleibt als Entwickler-Alternative erhalten. [Plugin-Einrichtung](docs/PLUGINS.md) und [direkte Verbindungen](docs/VERBINDUNGEN.md).
 
 E-Mails werden als **Entwürfe** erstellt, nicht automatisch versendet. Kalendertermine werden ohne Teilnehmer angelegt. Home Assistant ist auf `light`, `switch` und `scene` beschränkt; keine Schlösser oder Alarmanlagen. Browser-Passwort-/Zahlungsfelder und kritische Aktionen sind ausgeschlossen; Anmeldung erfolgt durch dich. Nicht jede Website ist automatisierbar. Kein beliebiger Shell-Zugriff, kein WhatsApp-/Spotify-Connector und keine Hintergrundüberwachung bei ausgeschaltetem PC.
 
 ## KI, Kosten und Datenschutz
 
-Voreinstellungen: `gpt-4.1-mini` für Text/Vision und `gpt-realtime-mini` mit Stimme `cedar` für Sprache. Modelle sind konfigurierbar; der Account muss Zugriff darauf haben. Das tägliche Limit zählt API-Aufrufe inklusive Sprach-Verbindungsstarts, **nicht Euro oder Gesprächsminuten**. Eine Sprachsitzung endet nach 15 Minuten; Audio und Transkription können zusätzlich berechnet werden. Auch fehlgeschlagene Anfragen zählen vorsichtshalber ins lokale Limit. Das Limit setzt um 00:00 UTC zurück. Anbieterlimits zusätzlich konfigurieren.
+Voreinstellungen: `gpt-4.1-mini` für Text/Vision und `gpt-realtime-mini` mit Stimme `cedar` für Sprache. Der Kostenwächter begrenzt den aktiven Sprachkontext, hält Antworten kurz und reduziert maximale Text-/Rechercheausgaben; das lokale Langzeitgedächtnis bleibt erhalten. Modelle sind konfigurierbar; der Account muss Zugriff darauf haben. Das tägliche Limit zählt API-Aufrufe inklusive Sprach-Verbindungsstarts, **nicht Euro oder Gesprächsminuten**. Aegis zeigt gemeldete Text-, Audio- und Cache-Tokens, aber keine erfundene verbindliche Rechnung. [Details und aktuelle offizielle Preisquellen](docs/KOSTEN.md).
 
 Alternativ: **Ollama** für lokale Text-KI auf `http://127.0.0.1:11434`, mit einem installierten toolfähigen Modell, beispielsweise `qwen3:8b`. Ollama und das Modell sind nicht mitgeliefert. Qualität und Werkzeugfähigkeit hängen vom Modell ab. Live-Sprache und Screen Wingman benötigen in dieser Version OpenAI.
 
@@ -75,7 +89,7 @@ npm run test:desktop
 npm run package
 ```
 
-Das portable Ergebnis liegt in `release/Aegis-0.1.0-Windows.exe`. Der GitHub-Workflow testet und baut das Windows-Paket; Build-Artefakte werden 14 Tage aufgehoben. Ein privater Build wird nicht automatisch öffentlich veröffentlicht. Keine automatischen Updates; neue Versionen bewusst herunterladen.
+Das portable Ergebnis liegt in `release/Aegis-0.5.0-Windows.exe`, der feste App-Pfad in `release/win-unpacked/Aegis.exe`. Der GitHub-Workflow testet und baut das Windows-Paket; Build-Artefakte werden 14 Tage aufgehoben. Ein privater Build wird nicht automatisch öffentlich veröffentlicht. Keine automatischen Updates; neue Versionen bewusst herunterladen.
 
 Für isolierte Tests kann `AEGIS_DATA_DIR` gesetzt werden. `OPENAI_API_KEY` wird alternativ beim Start übernommen, wenn kein Schlüssel gespeichert ist; `.env` wird nicht automatisch geladen. Keine echten Keys für Tests verwenden.
 

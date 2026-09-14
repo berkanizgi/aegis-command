@@ -1,6 +1,6 @@
 import { chromium } from "@playwright/test";
 import { spawn, execFile } from "node:child_process";
-import { mkdtemp, mkdir } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import net from "node:net";
@@ -14,7 +14,10 @@ const probe = net.createServer();
 await new Promise((resolve) => probe.listen(0, "127.0.0.1", resolve));
 const port = probe.address().port;
 await new Promise((resolve) => probe.close(resolve));
-const executable = path.join(root, "release", "Aegis-0.1.0-Windows.exe");
+const { version } = JSON.parse(
+  await readFile(path.join(root, "package.json"), "utf8"),
+);
+const executable = path.join(root, "release", `Aegis-${version}-Windows.exe`);
 const child = spawn(
   executable,
   [
@@ -59,12 +62,47 @@ try {
   const state = await window.evaluate(() => window.aegis.invoke("state"));
   assert.equal(state.settings.name, "Boss");
   assert.equal(state.connectors.length, 5);
+  assert.equal(state.settings.voiceOnStartup, true);
+  assert.equal(await window.locator("#aegis-conversation").count(), 0);
+  assert.equal(
+    await window
+      .getByRole("button", { name: "Chat anzeigen", exact: true })
+      .count(),
+    1,
+  );
+  const overview = await window.evaluate(() =>
+    window.aegis.invoke("app.overview"),
+  );
+  assert.equal(overview.app, "AEGIS");
+  assert.equal(overview.liveDesk.visible, false);
+  await window.evaluate(() =>
+    window.aegis.invoke("tools.execute", {
+      name: "world_view",
+      args: { action: "open" },
+    }),
+  );
+  await window.waitForSelector(".live-desk");
+  await window.evaluate(() =>
+    window.aegis.invoke("tools.execute", {
+      name: "world_view",
+      args: { action: "home" },
+    }),
+  );
+  await window.waitForSelector(".live-desk", { state: "detached" });
+  assert.match(
+    await window.locator("body").innerText(),
+    new RegExp(`AEGIS v${version.replaceAll(".", "\\.")}`),
+  );
   assert.match(await window.title(), /Aegis/);
   console.log(
     JSON.stringify({
       portable: true,
       title: await window.title(),
       localCore: true,
+      version,
+      voiceFirstDefaults: true,
+      appOverview: true,
+      liveDesk: true,
       secretStorage: state.settings.secretStorage,
     }),
   );

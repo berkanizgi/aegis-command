@@ -9,4 +9,15 @@ contextBridge.exposeInMainWorld("aegis", {
     return () => ipcRenderer.removeListener("aegis:voice-toggle", listener);
   },
   platform: process.platform,
+  researchLayout: (value) => ipcRenderer.send("aegis:research-layout", value),
+  onDesk: (callback) => {
+    const listener = (_, value) => callback(value);
+    ipcRenderer.on("aegis:desk", listener);
+    return () => ipcRenderer.removeListener("aegis:desk", listener);
+  },
+  onVoiceStop: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("aegis:voice-stop", listener);
+    return () => ipcRenderer.removeListener("aegis:voice-stop", listener);
+  },
 });

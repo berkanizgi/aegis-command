@@ -18,6 +18,8 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run test:desktop
+      - run: npm run test:voice-ui
+      - run: npm run test:live-desk
       - run: npm run package
       - run: npm run test:portable
       - uses: actions/upload-artifact@v4

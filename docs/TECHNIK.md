@@ -9,6 +9,7 @@ React/TypeScript + Canvas-Kern
       → OpenAI Responses / Realtime oder lokales Ollama
       → Workspace und lokale Notizen
       → direkte Connector-APIs
+      → lokaler Codex App Server → offizieller Plugin-/App-Katalog
       → isolierter sichtbarer Browser Operator
 ```
 
@@ -34,6 +35,14 @@ Shadow-Modus bleibt nach Neustart aus. Er speichert Fenstertitel, nicht den Inha
 
 ## Testumfang
 
+Version 0.5.0 ergänzt Plugin Control, die lokale Codex-App-Server-Brücke und den kontrollierten Outlook-Antwortablauf. Der Katalog zeigt nur bestätigten Live-Zugang als verbunden; bei Laufzeitfehlern dient der offizielle lokale Cache ausschließlich zur Auswahl. Der Outlook-Pfad kennt keinen Sendeschritt. Antworttext bleibt bearbeitbar, der Entwurf wird gegen `sent:false` und beim direkten Graph-Pfad zusätzlich gegen `isDraft:true` geprüft. Lokale Sprachhinweise und Ortsalias-Korrektur verbessern Bregenz/Vorarlberg ohne ein größeres Modell. Insgesamt 61 automatisierte Tests.
+
+Version 0.4.0 ergänzt drei Tests (insgesamt 57): Microsoft-Graph-Postfachdaten werden lokal mit transparenten Prioritätssignalen geordnet und als Belegkarten dargestellt; Realtime meldet Text-, Audio- und Cache-Tokens dedupliziert an den lokalen Zustand. Der Kostenwächter verwendet einen kompakten Sprachkontext mit serverseitiger Retention und kürzeren Ausgaben, ohne gespeicherte Erinnerungen zu löschen. Das Meister-Protokoll bleibt bei höflicher Loyalität, darf aber Tatsachen und Sicherheitsgrenzen nicht fälschen. [Kostenmodell und offizielle Quellen](KOSTEN.md).
+
+Version 0.3.0 ergänzt 11 Tests (insgesamt 54), direkte Realtime-Live-Desk-Werkzeuge, flüchtige visuelle Ergebnisse samt Abbruchschutz und eine separate native Quellenansicht. Der Audiozugriff wird für das vertrauenswürdige Hauptfenster automatisch gewährt; Kamera/Unterframes bleiben gesperrt. `npm run test:live-desk` prüft zusätzlich den echten Chromium-Berechtigungsweg mit Testhardware, Datenansichten, eingebettete Quellen ohne Preload und schmale Fenster. Öffentliche Wetter-/FX-/Krypto-Datenquellen wurden separat live getestet; kostenpflichtige Websuche und Live-Sprache nicht. [Details, Quellen und Grenzen](LIVE-DESK.md).
+
+Version 0.2.0 ergänzt einen lokalen `aegis_status`-Leseaufruf: Navigation, gespeicherte Missionen/Zusagen, Freigaben und konfigurierte bzw. verbundene Dienste, ohne Schlüssel und ohne externe Abfragen. Die Startbegrüßung verwendet diesen lokalen Kontext, keinen erfundenen Postfach-Scan. Realtime-Anweisungen und Begrüßung folgen den [offiziellen Realtime-Dokumenten](https://developers.openai.com/api/docs/guides/realtime-conversations); vorhandene Modell- und Stimmeneinstellungen bleiben erhalten. Audio-Autoplay gilt nur für das vertrauenswürdige App-Fenster. Das Mikrofon startet dort bei aktivierter Startbegrüßung und eingerichtetem OpenAI-Zugang. Der Canvas-Kern nutzt die Amplitude des empfangenen Audios, nicht nur eine zeitgesteuerte Sprechsimulation.
+
 `npm test` prüft lokal und mit gemockten Providerantworten:
 
 - leeren Erststart, Persistenz, Verschlüsselungsumschlag, Session-only-Secrets;
@@ -42,8 +51,13 @@ Shadow-Modus bleibt nach Neustart aus. Er speichert Fenstertitel, nicht den Inha
 - Report-Readback, wiederherstellbares Undo, Erhalt nachträglicher Benutzeränderungen;
 - unterbrochene Schreibaktionen nach Neustart, Routinefreigaben und Deduplizierung;
 - Responses-Werkzeugschleife und Anfrage-Limit, Realtime-SDP-Konfiguration;
+- Realtime-Retention, Nutzungszähler und Kostenwächter;
 - Connectorstatus, HTTP-Fehler, Google PKCE/State, Microsoft Device Flow, Token-Refresh;
-- Entwurf statt Mailversand, Datums-/Header-Validierung, Home-Assistant-Grenzen, Webquellen.
+- Entwurf statt Mailversand, Postfach-Belegkarten, Datums-/Header-Validierung, Home-Assistant-Grenzen, Webquellen.
+
+Der Stand 0.2.0 hat 43 Tests. Zusätzlich geprüft: exaktes SDP inklusive abschließendem CRLF, App-Status ohne Schlüssel, Microsoft-Kontotyp und Fehlerhinweise, einmalige Begrüßung nach Sitzungsbereitschaft, tatsächliches Wiedergabeende statt nur Generierungsende, Audio-Messung und Aufräumen sowie Abbruch während des Verbindungsaufbaus.
+
+`npm run test:voice-ui` startet eine isolierte Electron-Instanz mit simuliertem Mikrofon/WebRTC und Providerantworten. Es prüft automatischen Sprachstart, zunächst versteckten Chat, sichtbaren Kern während der Sprache, Escape, ausgeschalteten Sprachstart und keinen Wiederverbindungs-Loop nach Fehlern. Der Screenshot `Aegis-Voice-First.png` verwendet bewusst simulierte Sprache; der Test beweist keine Live-Audioverbindung zu OpenAI.
 
 `npm run test:desktop` startet eine frische Electron-Testinstanz mit isoliertem Datenordner und bedient UI/IPC. Es prüft Gedächtnis, Chat/Fokus, Mission/Approval/Undo, Einstellungen, Navigation und Browser Operator. Screenshots enthalten nur leeren Erststart beziehungsweise ausdrücklich erzeugte Testdaten. Keine echten Konten oder Mikrofonaufnahmen erforderlich.
 

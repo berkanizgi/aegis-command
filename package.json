@@ -1,6 +1,6 @@
 {
   "name": "aegis-command",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
   "author": "Berkan Izgi",
   "type": "module",
@@ -16,6 +16,8 @@
     "package": "npm run build && electron-builder --win portable --publish never",
     "preview": "node scripts/preview.mjs",
     "test:desktop": "node scripts/smoke-desktop.mjs",
+    "test:voice-ui": "node scripts/smoke-voice-ui.mjs",
+    "test:live-desk": "node scripts/smoke-live-desk.mjs",
     "test:portable": "node scripts/smoke-portable.mjs",
     "format": "prettier --write src server electron scripts tests docs README.md package.json vite.config.ts"
   },

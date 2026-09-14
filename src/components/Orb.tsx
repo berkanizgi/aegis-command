@@ -1,6 +1,16 @@
 import { useEffect, useRef } from "react";
-export default function Orb({ active = false }: { active?: boolean }) {
+export default function Orb({
+  active = false,
+  status = "idle",
+  audioLevel,
+}: {
+  active?: boolean;
+  status?: string;
+  audioLevel?: { current: number };
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const live = useRef({ active, status, audioLevel });
+  live.current = { active, status, audioLevel };
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
@@ -35,15 +45,23 @@ export default function Orb({ active = false }: { active?: boolean }) {
       const theta = i * Math.PI * (3 - Math.sqrt(5));
       return { x: Math.cos(theta) * radius, y, z: Math.sin(theta) * radius };
     });
+    let amplitude = 0;
     const draw = () => {
-      frame += reduced ? 0 : 0.003 * (active ? 1.8 : 1);
+      const level = live.current.audioLevel?.current || 0;
+      amplitude += (level - amplitude) * (level > amplitude ? 0.35 : 0.1);
+      const speaking = live.current.status === "speaking";
+      frame += reduced
+        ? 0
+        : 0.003 * (live.current.active ? 1.8 : 1) + amplitude * 0.012;
       ctx.clearRect(0, 0, width, height);
       const cx = width / 2,
         cy = height / 2,
-        r = Math.min(width * 0.28, height * 0.345);
+        r =
+          Math.min(width * 0.28, height * 0.29) *
+          (reduced ? 1 : 1 + amplitude * 0.14);
       const haze = ctx.createRadialGradient(cx, cy, r * 0.1, cx, cy, r * 1.7);
-      haze.addColorStop(0, "rgba(60,205,202,0.07)");
-      haze.addColorStop(0.6, "rgba(15,153,157,0.04)");
+      haze.addColorStop(0, `rgba(60,205,202,${0.07 + amplitude * 0.35})`);
+      haze.addColorStop(0.6, `rgba(15,153,157,${0.04 + amplitude * 0.12})`);
       haze.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = haze;
       ctx.fillRect(0, 0, width, height);
@@ -73,7 +91,14 @@ export default function Orb({ active = false }: { active?: boolean }) {
             z = -p.x * Math.sin(frame) + p.z * Math.cos(frame);
           const tiltedY = p.y * Math.cos(0.19) - z * Math.sin(0.19),
             tiltedZ = p.y * Math.sin(0.19) + z * Math.cos(0.19);
-          return { x: cx + x * r, y: cy + tiltedY * r, z: tiltedZ };
+          const wave = reduced
+            ? 1
+            : 1 + Math.sin(p.y * 13 + frame * 9) * amplitude * 0.13;
+          return {
+            x: cx + x * r * wave,
+            y: cy + tiltedY * r * wave,
+            z: tiltedZ,
+          };
         })
         .sort((a, b) => a.z - b.z);
       for (const p of rendered) {
@@ -107,9 +132,28 @@ export default function Orb({ active = false }: { active?: boolean }) {
       }
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(123,237,226,0.24)";
+      ctx.strokeStyle = `rgba(123,237,226,${0.24 + amplitude * 0.6})`;
       ctx.lineWidth = 0.8;
       ctx.stroke();
+      if (speaking || amplitude > 0.02) {
+        for (let ring = 0; ring < 3; ring++) {
+          ctx.beginPath();
+          for (let i = 0; i <= 160; i++) {
+            const angle = (i / 160) * Math.PI * 2;
+            const ripple = reduced
+              ? 0
+              : Math.sin(angle * 9 + frame * 16 + ring) * amplitude * 0.08;
+            const radius = r * (1.08 + ring * 0.08 + ripple);
+            const x = cx + Math.cos(angle) * radius;
+            const y = cy + Math.sin(angle) * radius;
+            if (!i) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.strokeStyle = `rgba(130,255,226,${(0.12 + amplitude * 0.45) / (ring + 1)})`;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      }
       for (let i = 0; i < 5; i++) {
         const a = frame * 0.5 + i * 1.256;
         const x = cx + Math.cos(a) * r * 1.6,
@@ -129,12 +173,19 @@ export default function Orb({ active = false }: { active?: boolean }) {
       cancelAnimationFrame(id);
       observer.disconnect();
     };
-  }, [active]);
+  }, []);
   return (
     <canvas
       className="orb-canvas"
       ref={ref}
-      aria-label={active ? "Aegis Sprachverbindung aktiv" : "Aegis Kern bereit"}
+      data-voice-status={status}
+      aria-label={
+        status === "speaking"
+          ? "Aegis spricht – Klangreaktiver Kern"
+          : active
+            ? "Aegis Sprachverbindung aktiv"
+            : "Aegis Kern bereit"
+      }
     />
   );
 }

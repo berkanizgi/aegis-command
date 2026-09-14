@@ -19,6 +19,8 @@ const { pathToFileURL } = require("node:url");
 const { execFile } = require("node:child_process");
 const { createBrowserOperator } = require("./browser.cjs");
 const { isTrustedFile } = require("./trust.cjs");
+const { installAudioPermissions } = require("./permissions.cjs");
+const { createResearchView } = require("./research.cjs");
 if (process.env.AEGIS_DATA_DIR)
   app.setPath("userData", path.resolve(process.env.AEGIS_DATA_DIR));
 app.setName("Aegis");
@@ -99,6 +101,7 @@ async function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
+      autoplayPolicy: "no-user-gesture-required",
     },
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -132,7 +135,16 @@ else {
       const { createService } = await import(
         pathToFileURL(path.join(appRoot, "server", "service.mjs")).href
       );
+      const { publicWebUrl } = await import(
+        pathToFileURL(path.join(appRoot, "server", "world.mjs")).href
+      );
+      const research = createResearchView(() => win, publicWebUrl);
       const desktop = {
+        research,
+        publishDesk: (desk) => {
+          if (win && !win.isDestroyed())
+            win.webContents.send("aegis:desk", desk);
+        },
         browser: createBrowserOperator(() => win),
         pickFolder: async () => {
           const result = await dialog.showOpenDialog(win, {
@@ -193,20 +205,20 @@ else {
           win.isMaximized() ? win.unmaximize() : win.maximize();
         if (action === "close") win.close();
       });
-      session.defaultSession.setPermissionRequestHandler(
-        (wc, permission, callback, details) =>
-          callback(
-            Boolean(
-              trusted(wc) &&
-              permission === "media" &&
-              !(details.mediaTypes || []).includes("video"),
-            ),
-          ),
-      );
-      session.defaultSession.setPermissionCheckHandler((wc, permission) =>
-        Boolean(trusted(wc) && permission === "media"),
+      ipcMain.on("aegis:research-layout", (event, value) => {
+        if (
+          trusted(event.sender) &&
+          event.senderFrame === event.sender.mainFrame
+        )
+          research.layout(value);
+      });
+      installAudioPermissions(session.defaultSession, trusted, (url) =>
+        devUrl
+          ? url.startsWith(new URL(devUrl).origin + "/")
+          : isTrustedFile(url, path.join(appRoot, "dist", "index.html")),
       );
       await createWindow();
+      win.on("resize", () => research.layout({ visible: false }));
       const iconPath = path.join(appRoot, "dist", "aegis-icon.png");
       const icon = nativeImage.createFromPath(iconPath);
       if (!icon.isEmpty()) {

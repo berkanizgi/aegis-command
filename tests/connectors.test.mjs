@@ -238,6 +238,38 @@ test("Microsoft drafts never call send and verify isDraft", async () => {
   assert.equal(r.verified, true);
   assert.ok(urls.every((url) => !url.includes("sendMail")));
 });
+test("Microsoft reply drafts target the exact message and never call a send route", async () => {
+  const requests = [];
+  const m = manager(async (url, options = {}) => {
+    requests.push({ url, options });
+    if (options.method === "POST")
+      return json({
+        id: "reply-draft-ms",
+        subject: "RE: Test",
+        webLink: "https://outlook.live.com/mail/drafts/reply-draft-ms",
+      });
+    return json({
+      id: "reply-draft-ms",
+      subject: "RE: Test",
+      isDraft: true,
+      webLink: "https://outlook.live.com/mail/drafts/reply-draft-ms",
+    });
+  });
+  oauthToken(m, "microsoft");
+  const r = await m.execute("microsoft_mail_reply_draft", {
+    id: "source-message-42",
+    body: "Danke.\n\nDer Termin passt.",
+  });
+  const create = requests.find((request) => request.options.method === "POST");
+  assert.match(create.url, /source-message-42\/createReply$/);
+  assert.equal(
+    JSON.parse(create.options.body).comment,
+    "Danke.\n\nDer Termin passt.",
+  );
+  assert.equal(r.sent, false);
+  assert.equal(r.verified, true);
+  assert.ok(requests.every((request) => !/send(?:Mail)?/i.test(request.url)));
+});
 test("expired OAuth tokens refresh once for concurrent requests", async () => {
   let refreshes = 0;
   const m = manager(async (url) => {
@@ -298,7 +330,10 @@ test("Microsoft device authorization displays code without leaking device token"
     ),
   );
   t.after(() => m.close());
-  await m.configure("microsoft", { clientId: "client", tenantId: "common" });
+  await m.configure("microsoft", {
+    clientId: "00000000-0000-4000-8000-000000000001",
+    tenantId: "common",
+  });
   const auth = await m.connect("microsoft");
   assert.equal(auth.userCode, "ABCD-1234");
   assert.ok(!JSON.stringify(auth).includes("secret-device"));
@@ -324,4 +359,52 @@ test("Tavily exposes sourced excerpts and not executable page content", async ()
   const r = await m.execute("web_search", { query: "test" });
   assert.equal(r.sourceType, "untrusted_external_content");
   assert.equal(r.sources[0].url, "https://example.com");
+});
+test("Microsoft rejects portal IDs and mail passwords before opening a login", async (t) => {
+  let calls = 0;
+  const m = manager(() => {
+    calls++;
+    throw Error("No network expected");
+  });
+  t.after(() => m.close());
+  for (const clientId of [
+    "74658136-14ec-4630-ad9b-26e160ff0fc6",
+    "email@example.com",
+    "password",
+  ]) {
+    await assert.rejects(
+      () => m.configure("microsoft", { clientId }),
+      /Appregistrierung|GUID/,
+    );
+  }
+  assert.equal(calls, 0);
+  assert.equal(m.list().find((c) => c.id === "microsoft").configured, false);
+});
+test("Microsoft personal-account selection uses consumers and returns actionable safe errors", async (t) => {
+  const m = manager(async (url) => {
+    assert.match(url, /\/consumers\/oauth2\/v2.0\/devicecode/);
+    return json(
+      {
+        error: "unauthorized_client",
+        error_codes: [50020],
+        error_description: "sensitive-account@example.com",
+      },
+      400,
+    );
+  });
+  t.after(() => m.close());
+  await m.configure("microsoft", {
+    clientId: "00000000-0000-4000-8000-000000000001",
+    tenantId: "consumers",
+  });
+  assert.equal(
+    m.list().find((c) => c.id === "microsoft").tenantId,
+    "consumers",
+  );
+  await assert.rejects(
+    () => m.connect("microsoft"),
+    (error) =>
+      /private Konten/.test(error.message) &&
+      !error.message.includes("sensitive-account"),
+  );
 });

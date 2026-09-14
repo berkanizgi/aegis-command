@@ -11,6 +11,7 @@ export interface AegisState {
   focus: Row;
   shadow: Row;
   usage: Row;
+  desk?: Row;
 }
 declare global {
   interface Window {
@@ -34,12 +35,9 @@ export async function invoke(
     },
     body: JSON.stringify({ operation, payload }),
   });
-  const value = await response
-    .json()
-    .catch(() => ({
-      error:
-        "Der lokale Aegis-Dienst antwortet nicht. Bitte starte die App neu.",
-    }));
+  const value = await response.json().catch(() => ({
+    error: "Der lokale Aegis-Dienst antwortet nicht. Bitte starte die App neu.",
+  }));
   if (!response.ok)
     throw new Error(
       typeof value.error === "string"
@@ -56,6 +54,11 @@ export const initialState: AegisState = {
     model: "gpt-4.1-mini",
     realtimeModel: "gpt-realtime-mini",
     voice: "cedar",
+    voiceOnStartup: true,
+    economyMode: true,
+    masterProtocol: true,
+    speechHints:
+      "Bregenz, Dornbirn, Feldkirch, Bludenz, Hohenems, Vorarlberg, Österreich",
     dailyRequestLimit: 100,
   },
   missions: [],

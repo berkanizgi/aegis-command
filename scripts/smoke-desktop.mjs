@@ -79,6 +79,10 @@ try {
     "Atlas · Testprojekt",
   );
   await nav("Command Center").click();
+  await expect(window.getByLabel("Nachricht an Aegis")).toHaveCount(0);
+  await window
+    .getByRole("button", { name: "Chat anzeigen", exact: true })
+    .click();
   await window.getByLabel("Nachricht an Aegis").fill("Fokus 25");
   await window
     .getByRole("button", { name: "Nachricht senden", exact: true })
@@ -127,6 +131,27 @@ try {
     1,
   );
   await nav("Einstellungen").click();
+  await expect(
+    window.getByRole("checkbox", { name: /Beim Öffnen begrüßen/ }),
+  ).toBeChecked();
+  await window
+    .getByRole("button", { name: "Microsoft 365 Nicht verbunden" })
+    .click();
+  await expect(
+    window.getByRole("button", { name: "Postfach anmelden", exact: true }),
+  ).toBeDisabled();
+  await expect(window.getByLabel("Microsoft-Kontotyp")).toHaveValue("common");
+  await window
+    .locator(".microsoft-setup summary")
+    .filter({ hasText: "Fehler" })
+    .click();
+  await expect(window.locator(".microsoft-setup details").last()).toContainText(
+    "Verwaltungsportal",
+  );
+  await window.screenshot({
+    path: path.join(root, "..", "Aegis-Microsoft-Setup.png"),
+    fullPage: true,
+  });
   await window.getByLabel("Wie soll Aegis dich ansprechen?").fill("Boss QA");
   await window
     .getByRole("button", { name: "Einstellungen speichern", exact: true })
