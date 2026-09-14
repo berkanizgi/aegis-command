@@ -1,10 +1,10 @@
-# Aegis 0.5.0 · Plugin Control
+# Aegis 0.5.1 · Plugin Control
 
 Aegis kann den offiziellen Codex-/ChatGPT-Plugin-Katalog verwenden. Es kopiert keine Passwörter oder rohen OAuth-Tokens in den eigenen Zustand. Installation und Kontoanmeldung laufen über die offiziellen Dialoge des jeweiligen Anbieters; Aegis liest danach nur den vom Codex-App-Server gemeldeten Status.
 
 ## Privates Hotmail verbinden
 
-1. Aegis vollständig beenden und Version 0.5.0 starten.
+1. Aegis vollständig beenden und Version 0.5.1 starten.
 2. **Control Panel → Plugins** öffnen.
 3. Falls angezeigt, **ChatGPT anmelden** wählen und die offizielle Geräteanmeldung abschließen.
 4. Auf der hervorgehobenen Karte **Outlook Email → Mit einem Klick einrichten** wählen.

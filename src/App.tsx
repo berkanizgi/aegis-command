@@ -1703,7 +1703,7 @@ export default function App() {
                 ? "OPENAI CONFIGURED"
                 : "AI NOT CONNECTED"}
             <span className="status-divider" />
-            AEGIS v0.5.0
+            AEGIS v0.5.1
           </div>
         </footer>
       </div>

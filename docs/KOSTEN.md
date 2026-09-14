@@ -1,4 +1,4 @@
-# Aegis 0.5.0 · Kostenwächter
+# Aegis 0.5.1 · Kostenwächter
 
 ## Die kurze Empfehlung
 

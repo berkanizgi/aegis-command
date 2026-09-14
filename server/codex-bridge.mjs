@@ -261,7 +261,7 @@ export function createCodexBridge({ cwd, desktop = {}, codexHome } = {}) {
         if (packet.method) for (const listener of listeners) listener(packet);
       });
       await request("initialize", {
-        clientInfo: { name: "aegis-command", version: "0.5.0" },
+        clientInfo: { name: "aegis-command", version: "0.5.1" },
         capabilities: {
           experimentalApi: true,
           optOutNotificationMethods: [

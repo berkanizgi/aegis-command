@@ -1,4 +1,4 @@
-# Aegis 0.5.0 · Live Desk
+# Aegis 0.5.1 · Live Desk
 
 Der Sprachkern bleibt sichtbar und rückt automatisch nach links, sobald Aegis ein visuelles Datenwerkzeug verwendet. Rechts erscheinen echte Ergebnisse. Der Chat bleibt optional. Keine automatischen Käufe, Handelsaufträge, Kontoregistrierungen oder Freigaben.
 

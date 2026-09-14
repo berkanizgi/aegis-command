@@ -20,6 +20,10 @@ const argDigest = (name, args, context = {}) =>
     .digest("hex");
 const asJSON = (value) => JSON.stringify(value).slice(0, 60000);
 const stripToolMetadata = ({ risk, connector, ...tool }) => tool;
+// Realtime currently rejects the Responses-only `strict` field for custom
+// function tools on gpt-realtime-mini. Keep the two wire schemas separate.
+const stripRealtimeToolMetadata = ({ risk, connector, strict, ...tool }) =>
+  tool;
 const routineTool = {
   type: "function",
   name: "routine_create",
@@ -1852,8 +1856,8 @@ ${asJSON(appOverview())}`;
                 output: { voice: state.settings.voice },
               },
               tools: [
-                ...worldTools.map(stripToolMetadata),
-                stripToolMetadata(mailReplyTool),
+                ...worldTools.map(stripRealtimeToolMetadata),
+                stripRealtimeToolMetadata(mailReplyTool),
                 {
                   type: "function",
                   name: "aegis_status",

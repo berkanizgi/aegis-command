@@ -1,6 +1,6 @@
 # Verbindungen einrichten
 
-Nur die Dienste verbinden, die du tatsächlich brauchst. Es gibt keine eingebauten Konten oder globalen OAuth-Secrets. Aegis unterstützt direkte APIs und ab Version 0.5.0 zusätzlich den offiziellen Codex-/ChatGPT-Plugin-Katalog. Für privates Hotmail ist der Plugin-Weg empfohlen; Details stehen unter [Plugin Control](PLUGINS.md).
+Nur die Dienste verbinden, die du tatsächlich brauchst. Es gibt keine eingebauten Konten oder globalen OAuth-Secrets. Aegis unterstützt direkte APIs und ab Version 0.5.1 zusätzlich den offiziellen Codex-/ChatGPT-Plugin-Katalog. Für privates Hotmail ist der Plugin-Weg empfohlen; Details stehen unter [Plugin Control](PLUGINS.md).
 
 ## OpenAI
 

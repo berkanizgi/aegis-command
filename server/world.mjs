@@ -199,7 +199,7 @@ export function createWorld({
       redirect: "error",
       headers: {
         Accept: "application/json",
-        "User-Agent": "Aegis/0.5.0 (personal desktop assistant)",
+        "User-Agent": "Aegis/0.5.1 (personal desktop assistant)",
       },
     });
     if (!res.ok)

@@ -526,6 +526,10 @@ test("Realtime exchange keeps long-lived credentials outside renderer and builds
   assert.ok(session.tools.some((t) => t.name === "aegis_command"));
   assert.ok(session.tools.some((t) => t.name === "aegis_status"));
   assert.ok(session.tools.some((t) => t.name === "world_mail_reply"));
+  assert.ok(
+    session.tools.every((tool) => !("strict" in tool)),
+    "Realtime function tools must not contain the Responses-only strict field",
+  );
   assert.match(result.greetingInstructions, /Begrüße den Nutzer/);
   assert.match(result.greetingInstructions, /keine Werkzeuge/);
   assert.ok(!result.greetingInstructions.includes("fake-key"));
