@@ -323,6 +323,7 @@ export default function App() {
     ),
     [focusMinutes, setFocusMinutes] = useState(45),
     [viewConversation, setViewConversation] = useState(false);
+  const [controlRequest, setControlRequest] = useState<Row | null>(null);
   const voice = useRef<ReturnType<typeof createVoiceSession> | null>(null),
     voiceLevel = useRef(0),
     startupAttempted = useRef(false),
@@ -374,6 +375,56 @@ export default function App() {
       }),
     [],
   );
+  useEffect(
+    () =>
+      window.aegis?.onControl?.((request: Row) => {
+        if (
+          request.action === "navigate" &&
+          [
+            "command",
+            "missions",
+            "memory",
+            "routines",
+            "workspace",
+            "plugins",
+            "activity",
+            "settings",
+          ].includes(request.target)
+        ) {
+          setModal("");
+          setQuery("");
+          setPage(request.target as Page);
+          setControlRequest(request);
+          notify(
+            `AEGIS öffnet ${request.target === "settings" ? "die Einstellungen" : request.target === "plugins" ? "Plugins" : request.target}.`,
+          );
+        } else if (request.action === "stop_voice") {
+          startupAttempted.current = true;
+          voice.current?.stop();
+          setVoiceStatus("idle");
+          setControlRequest(request);
+          notify("Gespräch beendet. Das Mikrofon ist aus.");
+        }
+      }),
+    [notify],
+  );
+  useEffect(() => {
+    void invoke("app.view", { page, voiceStatus }).catch(() => {});
+    if (
+      controlRequest &&
+      ((controlRequest.action === "navigate" &&
+        page === controlRequest.target) ||
+        (controlRequest.action === "stop_voice" && voiceStatus === "idle"))
+    ) {
+      // This effect runs after React committed the requested view, not before navigation.
+      void invoke("app.control.ack", {
+        id: controlRequest.id,
+        page,
+        voiceStatus,
+      }).catch(() => {});
+      setControlRequest(null);
+    }
+  }, [page, voiceStatus, controlRequest]);
   async function act(operation: string, payload: Row = {}, message?: string) {
     if (operation === "missions.pause") {
       try {
@@ -651,6 +702,24 @@ export default function App() {
             <strong>{title}</strong>
           </div>
           <div className="topbar-right">
+            {voiceActive && page !== "command" && (
+              <button
+                className="global-voice-control"
+                onClick={() => void toggleVoice()}
+                title="Sprache läuft auf allen Seiten weiter · zum Beenden klicken"
+                aria-label="Sprachverbindung beenden"
+              >
+                <Mic size={15} />
+                <span>
+                  {voiceStatus === "speaking"
+                    ? "AEGIS spricht"
+                    : voiceStatus === "thinking"
+                      ? "AEGIS arbeitet"
+                      : "AEGIS hört zu"}
+                </span>
+                <X size={13} />
+              </button>
+            )}
             <span className={`system-chip ${online ? "" : "offline"}`}>
               <span />
               {loading
@@ -1703,7 +1772,7 @@ export default function App() {
                 ? "OPENAI CONFIGURED"
                 : "AI NOT CONNECTED"}
             <span className="status-divider" />
-            AEGIS v0.5.1
+            AEGIS v0.6.0
           </div>
         </footer>
       </div>

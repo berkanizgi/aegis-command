@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Boxes,
   Check,
@@ -40,8 +40,11 @@ export default function PluginHub({
     [working, setWorking] = useState(""),
     [query, setQuery] = useState(""),
     [showAll, setShowAll] = useState(false);
+  const loadingRef = useRef(false);
 
   async function load(force = false) {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       setCatalog(await invoke("plugins.catalog", { force }));
@@ -49,11 +52,17 @@ export default function PluginHub({
       notify(error instanceof Error ? error.message : String(error), true);
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
   }
 
   useEffect(() => {
     void load(false);
+    const refresh = () => {
+      if (document.visibilityState === "visible") void load(true);
+    };
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
   }, []);
 
   const matchingPlugins = useMemo(() => {
@@ -71,6 +80,10 @@ export default function PluginHub({
 
   async function install(plugin: Row) {
     if (working) return;
+    if (plugin.connected) {
+      await load(true);
+      return;
+    }
     setWorking(plugin.name);
     try {
       const result = await invoke("plugins.install", { name: plugin.name });
@@ -78,6 +91,23 @@ export default function PluginHub({
       await load(false);
     } catch (error) {
       notify(error instanceof Error ? error.message : String(error), true);
+    } finally {
+      setWorking("");
+    }
+  }
+
+  async function verifyOutlook() {
+    if (working) return;
+    setWorking("verify-outlook");
+    try {
+      const result = await invoke("plugins.verifyOutlook");
+      notify(
+        `Outlook bestätigt: ${result.account}. Es wurden keine E-Mails verändert.`,
+      );
+      await load(false);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : String(error), true);
+      await load(false);
     } finally {
       setWorking("");
     }
@@ -117,16 +147,18 @@ export default function PluginHub({
             <span
               className={catalog?.runtime === "online" ? "online" : "cached"}
             >
-              {catalog?.runtime === "online" ? "LIVE CATALOG" : "SAFE CACHE"}
+              {catalog?.runtimeVerified
+                ? "LAUFZEIT GEPRÜFT"
+                : "STATUS UNGEKLÄRT"}
             </span>
             <strong>
               {catalog?.account?.signedIn
                 ? `ChatGPT verbunden${catalog.account.email ? ` · ${catalog.account.email}` : ""}`
-                : catalog?.runtime === "online"
+                : catalog?.account?.known
                   ? "ChatGPT-Anmeldung erforderlich"
                   : "Katalog bereit · Laufzeit wird beim Klick geprüft"}
             </strong>
-            {catalog?.runtime === "online" && !catalog?.account?.signedIn && (
+            {(!catalog?.account?.signedIn || catalog?.error) && (
               <button disabled={!!working} onClick={() => void login()}>
                 {working === "account" ? (
                   <LoaderCircle className="spin" size={14} />
@@ -168,6 +200,37 @@ export default function PluginHub({
               Anmeldung. Danach hier „Status prüfen“ wählen.
             </small>
           )}
+          {outlook?.account && (
+            <small className="mint">
+              Bestätigtes Outlook-Konto: {outlook.account}
+            </small>
+          )}
+          <div className="outlook-controls">
+            <button
+              disabled={!!working || loading}
+              onClick={() => void verifyOutlook()}
+            >
+              {working === "verify-outlook" ? (
+                <LoaderCircle className="spin" size={14} />
+              ) : (
+                <ShieldCheck size={14} />
+              )}{" "}
+              Verbindung testen
+            </button>
+            {outlook?.connected && (
+              <button
+                disabled={!!working}
+                onClick={() => {
+                  void invoke("tools.execute", {
+                    name: "world_mail",
+                    args: { provider: "microsoft", limit: 30 },
+                  }).catch((error) => notify(String(error), true));
+                }}
+              >
+                <Mail size={14} /> Postfach öffnen
+              </button>
+            )}
+          </div>
         </div>
         <button
           className={`plugin-action ${outlook?.connected ? "connected" : ""}`}
@@ -184,8 +247,8 @@ export default function PluginHub({
           {outlook?.connected
             ? "Verbunden"
             : outlook?.installed
-              ? "Hotmail verbinden"
-              : "Mit einem Klick einrichten"}
+              ? "Zugang prüfen / einrichten"
+              : "Verbindung einrichten"}
         </button>
       </section>
 
@@ -215,12 +278,8 @@ export default function PluginHub({
         <div className="plugin-cache-note">
           <LockKeyhole size={15} />
           <div>
-            <strong>Lokaler Katalogmodus</strong>
-            <span>
-              Der Codex-App-Server antwortet gerade nicht. Installieren öffnet
-              deshalb den offiziellen ChatGPT-Verbindungsdialog. Details:{" "}
-              {catalog.error}
-            </span>
+            <strong>Verbindungsprüfung benötigt Aufmerksamkeit</strong>
+            <span>{catalog.error}</span>
           </div>
         </div>
       )}
@@ -264,11 +323,15 @@ export default function PluginHub({
                 <span>
                   {plugin.connected
                     ? "KONTO VERBUNDEN"
-                    : plugin.installed
-                      ? "INSTALLIERT · LOGIN OFFEN"
-                      : plugin.available
-                        ? "VERFÜGBAR"
-                        : "NICHT VERFÜGBAR"}
+                    : plugin.connectionState === "unknown"
+                      ? "ZUGRIFF NICHT BESTÄTIGT"
+                      : plugin.connectionState === "disabled"
+                        ? "IN CODEX DEAKTIVIERT"
+                        : plugin.installed
+                          ? "INSTALLIERT · NICHT AUFRUFBAR"
+                          : plugin.available
+                            ? "VERFÜGBAR"
+                            : "NICHT VERFÜGBAR"}
                 </span>
                 <button
                   disabled={!plugin.available || !!working}
@@ -308,7 +371,10 @@ export default function PluginHub({
         <p>
           Plugin ≠ Vollmacht: Lesefunktionen dürfen Lagebilder erzeugen.
           Entwürfe werden sichtbar vorbereitet. Senden, Kaufen, Löschen oder
-          Veröffentlichen bleibt eine ausdrückliche Nutzeraktion.
+          Veröffentlichen bleibt eine ausdrückliche Nutzeraktion. Die
+          Katalogliste stammt aus dem lokalen Codex-Cache; der Zugriff wird
+          unabhängig davon geprüft. Weitere Plugins im Katalog sind nicht
+          automatisch als Sprachwerkzeuge in Aegis eingebunden.
         </p>
       </div>
     </div>

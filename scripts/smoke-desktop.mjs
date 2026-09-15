@@ -38,6 +38,25 @@ try {
     timeout: 15000,
   });
   const state = await window.evaluate(() => window.aegis.invoke("state"));
+  const navigated = await window.evaluate(() =>
+    window.aegis.invoke("tools.execute", {
+      name: "aegis_app",
+      args: { action: "navigate", target: "settings" },
+    }),
+  );
+  assert.equal(navigated.completed, true);
+  await expect(window.locator("h1")).toContainText("Systemeinstellungen");
+  assert.equal(
+    (await window.evaluate(() => window.aegis.invoke("app.overview")))
+      .currentView.page,
+    "settings",
+  );
+  await window.evaluate(() =>
+    window.aegis.invoke("tools.execute", {
+      name: "aegis_app",
+      args: { action: "navigate", target: "command" },
+    }),
+  );
   if (!Array.isArray(state.missions)) throw new Error("Missing state");
   const note = await window.evaluate(() =>
     window.aegis.invoke("memory.save", {

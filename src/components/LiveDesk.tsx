@@ -642,13 +642,20 @@ function InboxPanel({
             </div>
             <span className="draft-lock">
               <ShieldCheck size={14} />{" "}
-              {draft.status === "saved" ? "ENTWURF" : "LOKAL"}
+              {draft.status === "saved"
+                ? "ENTWURF"
+                : draft.status === "saving"
+                  ? "SPEICHERT …"
+                  : draft.status === "uncertain"
+                    ? "BITTE PRÜFEN"
+                    : "LOKAL"}
             </span>
             <button
               className="mail-composer-close"
               onClick={() => void discardDraft()}
               title="Lokalen Entwurf verwerfen"
               aria-label="Lokalen Entwurf verwerfen"
+              disabled={draft.status === "saving"}
             >
               ×
             </button>

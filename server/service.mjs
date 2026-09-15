@@ -3,6 +3,7 @@ import { createStore, id, now, dateKey } from "./store.mjs";
 import { createLocalTools, validateWorkspace } from "./local-tools.mjs";
 import { createConnectors } from "./connectors.mjs";
 import { createCodexBridge } from "./codex-bridge.mjs";
+import { createAppControl, appControlTool } from "./app-control.mjs";
 import { browserTools, createBrowserTools } from "./browser-tools.mjs";
 import { createWorld, worldTools, publicWebUrl } from "./world.mjs";
 
@@ -24,6 +25,8 @@ const stripToolMetadata = ({ risk, connector, ...tool }) => tool;
 // function tools on gpt-realtime-mini. Keep the two wire schemas separate.
 const stripRealtimeToolMetadata = ({ risk, connector, strict, ...tool }) =>
   tool;
+const appControlInstruction =
+  "Steuere diese App mit aegis_app: navigate zu command/missions/memory/routines/workspace/plugins/activity/settings; inspect liest reale Einstellungen; stop_voice beendet das Gespräch und trennt das Mikrofon; open_application target chrome/edge/notepad/calculator startet ein Programm, aber bestätigt keinen Zugriff auf dessen Inhalte. Für Missionsaufträge die bestehenden Missionswerkzeuge verwenden. Navigation beendet die Sprache nicht. Plugin-Zugang und direkte Microsoft-Graph-Verbindung sind getrennt: unkonfiguriertes Microsoft Graph bedeutet NICHT getrenntes Outlook-Plugin. Bei unbekanntem/veraltetem Status zuerst aegis_status aufrufen. ";
 const routineTool = {
   type: "function",
   name: "routine_create",
@@ -122,6 +125,7 @@ export async function createService({
   secureStorage,
   desktop = {},
   fetchImpl = globalThis.fetch,
+  pluginBridge: suppliedPluginBridge,
 } = {}) {
   const store = await createStore(dataDir, secureStorage);
   const { state, save, getSecret, setSecret, sanitize } = store;
@@ -139,9 +143,16 @@ export async function createService({
     desktop,
   });
   const connectors = await connectorManager;
-  const pluginBridge = createCodexBridge({
-    cwd: process.cwd(),
+  const pluginBridge =
+    suppliedPluginBridge ||
+    createCodexBridge({
+      cwd: process.cwd(),
+      desktop,
+    });
+  const appControl = createAppControl({
     desktop,
+    overview: appOverview,
+    activity,
   });
   const world = createWorld({
     fetchImpl,
@@ -457,42 +468,67 @@ export async function createService({
     const reply = scene?.kind === "mail" ? scene.data?.replyDraft : null;
     if (!reply || reply.id !== replyId || reply.status !== "ready")
       throw Error("Dieser Antwortentwurf ist nicht mehr aktuell.");
-    let result;
-    if (reply.source === "microsoft-graph")
-      result = await connectors.execute("microsoft_mail_reply_draft", {
-        id: reply.messageId,
-        body: reply.body,
-      });
-    else if (reply.source === "outlook-plugin")
-      result = await pluginBridge.outlookReplyDraft({
-        messageId: reply.messageId,
-        body: reply.body,
-      });
-    else
+    if (!["microsoft-graph", "outlook-plugin"].includes(reply.source))
       throw Error(
-        "Für dieses Postfach kann Aegis noch keinen verknüpften Antwortentwurf speichern. Text kopieren und im Postfach öffnen.",
+        "Für dieses Postfach ist das Speichern eines Outlook-Entwurfs nicht verfügbar.",
       );
-    if (result.sent !== false)
-      throw Error(
-        "Der Anbieter bestätigte nicht eindeutig, dass nichts gesendet wurde. Postfach prüfen.",
-      );
-    const saved = {
+    // Lock before awaiting the external write: duplicate clicks cannot create two drafts.
+    world.setMailReply({
       ...reply,
-      status: "saved",
-      draftId: result.draftId || null,
-      draftUrl: result.url || result.webLink || reply.sourceWebLink || null,
-      savedAt: now(),
-      sent: false,
-      safety:
-        "Als Entwurf gespeichert. Nur du kannst ihn in Outlook öffnen und dort Senden drücken.",
-    };
-    world.setMailReply(saved);
-    await activity(
-      "Outlook-Entwurf gespeichert",
-      `Antwortentwurf für „${reply.subject}“ gespeichert; nicht gesendet.`,
-      "success",
-    );
-    return saved;
+      status: "saving",
+      safety: "Entwurf wird gespeichert. Noch nicht gesendet.",
+    });
+    try {
+      let result;
+      if (reply.source === "microsoft-graph")
+        result = await connectors.execute("microsoft_mail_reply_draft", {
+          id: reply.messageId,
+          body: reply.body,
+        });
+      else if (reply.source === "outlook-plugin")
+        result = await pluginBridge.outlookReplyDraft({
+          messageId: reply.messageId,
+          body: reply.body,
+        });
+      else
+        throw Error(
+          "Für dieses Postfach kann Aegis noch keinen verknüpften Antwortentwurf speichern. Text kopieren und im Postfach öffnen.",
+        );
+      if (
+        result.sent !== false ||
+        result.created !== true ||
+        !result.draftId ||
+        result.verified === false
+      )
+        throw Error(
+          "Der Anbieter bestätigte nicht eindeutig, dass nichts gesendet wurde. Postfach prüfen.",
+        );
+      const saved = {
+        ...reply,
+        status: "saved",
+        draftId: result.draftId || null,
+        draftUrl: result.url || result.webLink || reply.sourceWebLink || null,
+        savedAt: now(),
+        sent: false,
+        safety:
+          "Als Entwurf gespeichert. Nur du kannst ihn in Outlook öffnen und dort Senden drücken.",
+      };
+      world.updateMailReplyById(replyId, saved);
+      await activity(
+        "Outlook-Entwurf gespeichert",
+        `Antwortentwurf für „${reply.subject}“ gespeichert; nicht gesendet.`,
+        "success",
+      );
+      return saved;
+    } catch (error) {
+      world.updateMailReplyById(replyId, {
+        ...reply,
+        status: "uncertain",
+        safety:
+          "Speichern nicht bestätigt. Bitte den Entwürfe-Ordner in Outlook prüfen, bevor du einen neuen Entwurf anlegst. Kein automatischer Wiederholungsversuch.",
+      });
+      throw error;
+    }
   }
 
   function updateMailReplyDraft(replyId, body) {
@@ -527,6 +563,7 @@ export async function createService({
   const allTools = async () => [
     ...local.tools,
     ...worldTools,
+    appControlTool,
     {
       type: "function",
       name: "aegis_status",
@@ -630,6 +667,14 @@ export async function createService({
       scene = desk.scene;
     return {
       app: "AEGIS",
+      currentView: appControl.state(),
+      plugins: pluginBridge.status(),
+      desktopCapabilities: {
+        openApplications: desktop.openApplication
+          ? ["chrome", "edge", "notepad", "calculator"]
+          : [],
+        unrestrictedComputerAccess: false,
+      },
       checkedAt: now(),
       scope:
         "Lokaler Appstatus; keine neue Prüfung externer Postfächer oder Kalender.",
@@ -659,6 +704,15 @@ export async function createService({
         voiceSessionLimitMinutes: 15,
       },
       workspaceSelected: Boolean(state.settings.workspace),
+      settings: {
+        workspace: state.settings.workspace || null,
+        homeCity: state.settings.homeCity,
+        language: state.settings.language,
+        dailyRequestLimit: state.settings.dailyRequestLimit,
+        autostart: state.settings.autostart,
+        speechHints: state.settings.speechHints,
+        transcriptionModel: state.settings.transcriptionModel,
+      },
       liveDesk: {
         visible: desk.visible,
         scene: scene
@@ -712,9 +766,12 @@ export async function createService({
   }
   function personaInstruction() {
     const title = addressTitle();
-    return state.settings.masterProtocol
-      ? `Sprich den Nutzer in JEDER Antwort natürlich mit „${title}“ an. Du bist sein diskreter, loyaler strategischer Berater und bleibst konsequent in dieser Rolle. Formuliere respektvoll und dienend, aber nicht albern oder unterwürfig. Bestätige sein Ziel und seine Entscheidungsgewalt. Wenn Fakten widersprechen, widersprich höflich im Stil: „Meister, Ihr Ansatz ist nachvollziehbar; ein Punkt spricht dagegen …“. Stimme niemals einer nachweislich falschen Aussage zu und erfinde keine Erfolge. Sage nicht ungefragt „als KI“ oder verlasse die AEGIS-Rolle; technische Grenzen formulierst du als Systemgrenze.`
-      : `Sprich den Nutzer gelegentlich mit ${title} an.`;
+    return (
+      appControlInstruction +
+      (state.settings.masterProtocol
+        ? `Sprich den Nutzer in JEDER Antwort natürlich mit „${title}“ an. Du bist sein diskreter, loyaler strategischer Berater und bleibst konsequent in dieser Rolle. Formuliere respektvoll und dienend, aber nicht albern oder unterwürfig. Bestätige sein Ziel und seine Entscheidungsgewalt. Wenn Fakten widersprechen, widersprich höflich im Stil: „Meister, Ihr Ansatz ist nachvollziehbar; ein Punkt spricht dagegen …“. Stimme niemals einer nachweislich falschen Aussage zu und erfinde keine Erfolge. Sage nicht ungefragt „als KI“ oder verlasse die AEGIS-Rolle; technische Grenzen formulierst du als Systemgrenze.`
+        : `Sprich den Nutzer gelegentlich mit ${title} an.`)
+    );
   }
   function systemInstruction() {
     return `# Identität und Stimme
@@ -732,6 +789,8 @@ ${asJSON(appOverview())}`;
     const desk = world.state();
     const compact = {
       name: state.settings.masterProtocol ? "Meister" : state.settings.name,
+      currentView: appControl.state(),
+      plugins: pluginBridge.status(),
       economyMode: state.settings.economyMode,
       connected: connectors
         .list()
@@ -822,7 +881,19 @@ ${asJSON(appOverview())}`;
       return jsonCopy(
         await world.execute("world_search", { query: args.query }),
       );
-    if (tool.name === "aegis_status") return jsonCopy(appOverview());
+    if (tool.name === "aegis_status") {
+      await pluginBridge.catalog(false);
+      return jsonCopy(appOverview());
+    }
+    if (tool.name === "aegis_app") {
+      if (args.action === "inspect") await pluginBridge.catalog(false);
+      const result = await appControl.execute(args);
+      if (args.action === "navigate" && args.target === "plugins") {
+        await pluginBridge.catalog(false);
+        result.overview = appOverview();
+      }
+      return jsonCopy(result);
+    }
     if (tool.name === "world_mail_reply")
       return jsonCopy(await prepareMailReply(args));
     if (tool.name === "routine_create")
@@ -1581,6 +1652,12 @@ ${asJSON(appOverview())}`;
           return pluginBridge.install(payload.name);
         case "plugins.login":
           return pluginBridge.login();
+        case "plugins.verifyOutlook":
+          return pluginBridge.verifyOutlook();
+        case "app.view":
+          return appControl.update(payload);
+        case "app.control.ack":
+          return appControl.ack(payload);
         case "mail.reply.prepare":
           return prepareMailReply(payload);
         case "mail.reply.update":
@@ -1804,6 +1881,7 @@ ${asJSON(appOverview())}`;
           return jsonCopy(state.usage);
         }
         case "app.overview":
+          if (payload.refreshPlugins) await pluginBridge.catalog(false);
           return jsonCopy(appOverview());
         case "realtime.session": {
           if (state.settings.provider !== "openai")
@@ -1858,6 +1936,7 @@ ${asJSON(appOverview())}`;
               tools: [
                 ...worldTools.map(stripRealtimeToolMetadata),
                 stripRealtimeToolMetadata(mailReplyTool),
+                stripRealtimeToolMetadata(appControlTool),
                 {
                   type: "function",
                   name: "aegis_status",
@@ -1910,6 +1989,7 @@ ${asJSON(appOverview())}`;
       clearInterval(timer);
       connectors.close?.();
       pluginBridge.close?.();
+      appControl.close();
       world.close();
       for (const controller of controllers) controller.abort();
       for (const mission of state.missions)

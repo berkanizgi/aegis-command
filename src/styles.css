@@ -4889,6 +4889,39 @@ pre {
     display: none;
   }
 }
+.outlook-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.global-voice-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  color: #77ddc6;
+  border: 1px solid #315561;
+  border-radius: 8px;
+  background: #0a1821;
+  -webkit-app-region: no-drag;
+}
+.outlook-controls button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  border: 1px solid #315561;
+  border-radius: 9px;
+  background: #0a1821;
+  color: #b8e6e4;
+}
+.outlook-controls button:disabled {
+  opacity: 0.5;
+}
+.plugin-cache-note span {
+  overflow-wrap: anywhere;
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *:before,

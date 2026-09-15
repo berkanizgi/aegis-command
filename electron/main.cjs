@@ -21,6 +21,7 @@ const { createBrowserOperator } = require("./browser.cjs");
 const { isTrustedFile } = require("./trust.cjs");
 const { installAudioPermissions } = require("./permissions.cjs");
 const { createResearchView } = require("./research.cjs");
+const { openApplication } = require("./app-launcher.cjs");
 if (process.env.AEGIS_DATA_DIR)
   app.setPath("userData", path.resolve(process.env.AEGIS_DATA_DIR));
 app.setName("Aegis");
@@ -141,6 +142,13 @@ else {
       const research = createResearchView(() => win, publicWebUrl);
       const desktop = {
         research,
+        openApplication,
+        publishControl: (value) => {
+          if (!win || win.isDestroyed())
+            throw new Error("Aegis-Fenster ist geschlossen.");
+          win.show();
+          win.webContents.send("aegis:control", value);
+        },
         publishDesk: (desk) => {
           if (win && !win.isDestroyed())
             win.webContents.send("aegis:desk", desk);

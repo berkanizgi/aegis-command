@@ -9,6 +9,15 @@ type VoiceOptions = {
   onError: (error: string) => void;
   onAudioLevel?: (level: number) => void;
 };
+export function isVoiceStopCommand(text: string) {
+  const value = text
+    .toLocaleLowerCase("de")
+    .replace(/[.,!?]/g, "")
+    .trim();
+  return /^(?:(?:okay|ok|aegis|bitte)\s+)*(?:(?:chat|gespräch|sprachverbindung|verbindung)\s+(?:bitte\s+)?(?:beenden|trennen)|(?:beende|beenden wir)\s+(?:bitte\s+)?(?:den chat|das gespräch|die sprachverbindung)|(?:mikrofon|mikro)\s+aus)(?:\s+bitte)?$/.test(
+    value,
+  );
+}
 export function createVoiceSession(options: VoiceOptions) {
   let peer: RTCPeerConnection | null = null,
     stream: MediaStream | null = null,
@@ -260,8 +269,13 @@ export function createVoiceSession(options: VoiceOptions) {
         }
         if (
           data.type === "conversation.item.input_audio_transcription.completed"
-        )
+        ) {
           options.onTranscript("user", data.transcript);
+          if (isVoiceStopCommand(data.transcript || "")) {
+            stop();
+            return;
+          }
+        }
         if (
           [
             "response.output_audio_transcript.done",
@@ -277,6 +291,7 @@ export function createVoiceSession(options: VoiceOptions) {
           [
             "aegis_command",
             "aegis_status",
+            "aegis_app",
             "world_weather",
             "world_map",
             "world_markets",
@@ -295,8 +310,8 @@ export function createVoiceSession(options: VoiceOptions) {
             const args = JSON.parse(data.arguments);
             result =
               data.name === "aegis_status"
-                ? await options.invoke("app.overview")
-                : data.name.startsWith("world_")
+                ? await options.invoke("app.overview", { refreshPlugins: true })
+                : data.name.startsWith("world_") || data.name === "aegis_app"
                   ? await options.invoke("tools.execute", {
                       name: data.name,
                       args,

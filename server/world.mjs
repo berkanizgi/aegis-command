@@ -578,12 +578,24 @@ export function createWorld({
   function clearMailReply() {
     if (desk.scene?.kind !== "mail" || desk.scene.status !== "ready")
       throw Error("Öffne zuerst das Postfach.");
+    if (desk.scene.data.replyDraft?.status === "saving")
+      throw Error(
+        "Der Entwurf wird gerade gespeichert. Bitte das Ergebnis abwarten.",
+      );
     delete desk.scene.data.replyDraft;
     emit();
     return { cleared: true };
   }
   return {
     execute,
+    updateMailReplyById(replyId, reply) {
+      for (const scene of [desk.scene, ...desk.history]) {
+        if (scene?.kind === "mail" && scene.data?.replyDraft?.id === replyId)
+          scene.data.replyDraft = structuredClone(reply);
+      }
+      emit();
+      return structuredClone(reply);
+    },
     setMailReply,
     clearMailReply,
     state,

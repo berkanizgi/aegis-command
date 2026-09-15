@@ -9,6 +9,11 @@ contextBridge.exposeInMainWorld("aegis", {
     return () => ipcRenderer.removeListener("aegis:voice-toggle", listener);
   },
   platform: process.platform,
+  onControl: (callback) => {
+    const listener = (_, value) => callback(value);
+    ipcRenderer.on("aegis:control", listener);
+    return () => ipcRenderer.removeListener("aegis:control", listener);
+  },
   researchLayout: (value) => ipcRenderer.send("aegis:research-layout", value),
   onDesk: (callback) => {
     const listener = (_, value) => callback(value);

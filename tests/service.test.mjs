@@ -26,6 +26,11 @@ async function setup(t, options = {}) {
   await mkdir(workspace);
   const service = await createService({
     dataDir: path.join(dir, "data"),
+    pluginBridge: {
+      status: () => ({ outlook: { connected: false, state: "unknown" } }),
+      catalog: async () => ({ plugins: [] }),
+      close() {},
+    },
     ...options,
   });
   t.after(() => service.close());
@@ -45,6 +50,88 @@ const response = (value) =>
     status: 200,
     headers: { "content-type": "application/json" },
   });
+
+test("plugin drafts lock double clicks and never overwrite a new view", async (t) => {
+  let finish,
+    calls = 0;
+  const bridge = {
+    status: () => ({ outlook: { connected: true } }),
+    catalog: async () => ({ plugins: [] }),
+    close() {},
+    outlookInbox: async () => ({
+      messages: [
+        {
+          id: "mail-1",
+          subject: "Test mail",
+          from: "test@example.test",
+          bodyPreview: "Hi",
+          isRead: false,
+        },
+      ],
+      hasMore: false,
+    }),
+    outlookReplyDraft: () => {
+      calls++;
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    },
+  };
+  const s = await setup(t, { pluginBridge: bridge });
+  await s.invoke("tools.execute", {
+    name: "world_mail",
+    args: { provider: "microsoft", limit: 1 },
+  });
+  const draft = await s.invoke("mail.reply.prepare", {
+    messageId: "mail-1",
+    instruction: "Ich akzeptiere.",
+  });
+  const saving = s.invoke("mail.reply.save", { replyId: draft.id });
+  await assert.rejects(
+    s.invoke("mail.reply.save", { replyId: draft.id }),
+    /nicht mehr aktuell/,
+  );
+  await assert.rejects(s.invoke("mail.reply.clear"), /gerade gespeichert/);
+  finish({ created: true, sent: false, draftId: "draft-1" });
+  assert.equal((await saving).status, "saved");
+  assert.equal(calls, 1);
+});
+test("ambiguous draft save cannot be blindly retried", async (t) => {
+  const s = await setup(t, {
+    pluginBridge: {
+      status: () => ({}),
+      close() {},
+      outlookInbox: async () => ({
+        messages: [
+          { id: "mail-1", subject: "Test", from: "sender", isRead: false },
+        ],
+      }),
+      outlookReplyDraft: async () => {
+        throw Error("timeout");
+      },
+    },
+  });
+  await s.invoke("tools.execute", {
+    name: "world_mail",
+    args: { provider: "microsoft", limit: 1 },
+  });
+  const draft = await s.invoke("mail.reply.prepare", {
+    messageId: "mail-1",
+    instruction: "Danke.",
+  });
+  await assert.rejects(
+    s.invoke("mail.reply.save", { replyId: draft.id }),
+    /timeout/,
+  );
+  assert.equal(
+    (await s.invoke("state")).desk.scene.data.replyDraft.status,
+    "uncertain",
+  );
+  await assert.rejects(
+    s.invoke("mail.reply.save", { replyId: draft.id }),
+    /nicht mehr aktuell/,
+  );
+});
 
 test("first start is honest: no connected integrations or invented personal data", async (t) => {
   const s = await setup(t);

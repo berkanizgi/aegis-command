@@ -2,7 +2,9 @@
 
 Dein persönliches Command Center für Windows. Stimme, Projektgedächtnis und nachvollziehbare Aktionen – mit einer Oberfläche, die nach Zukunft aussieht.
 
-**Status: Version 0.5.1, kein universeller autonomer Computer-Agent.** Lokale Funktionen sind ohne KI nutzbar. Live-Sprache, freie KI-Aufträge und Kontodaten benötigen eigene Zugangsdaten. Die App enthält keine Beispieldaten und keine vorgetäuschten Verbindungen.
+**Status: Version 0.6.0, kein universeller autonomer Computer-Agent.** Lokale Funktionen sind ohne KI nutzbar. Live-Sprache, freie KI-Aufträge und Kontodaten benötigen eigene Zugangsdaten. Die App enthält keine Beispieldaten und keine vorgetäuschten Verbindungen.
+
+0.6.0 ergänzt sichtbare Sprachsteuerung der App: „Öffne die Einstellungen“, „Geh zu Missionen“, „Öffne Chrome“ und „Gespräch beenden“. Die Sprache bleibt beim Seitenwechsel bestehen; außerhalb des Command Centers zeigt die Kopfleiste den Mikrofonstatus. Der Plugin-Zugang wird jetzt getrennt vom Katalog und von Microsoft Graph geprüft. **Plugins → Outlook Email → Verbindung testen** liest nur das Kontoprofil und zeigt die bestätigte Adresse. E-Mail-Abrufe laufen über begrenzte direkte Werkzeuge, ohne zusätzlichen KI-Agenten; Sende-, Lösch- und Weiterleitungswerkzeuge werden nicht aufgerufen. [Details und Prüfschritte](docs/PLUGINS.md).
 
 0.5.1 behebt den Sprachstartfehler `Unknown parameter: session.tools[6].strict`: Responses-spezifische Werkzeugmetadaten werden nicht mehr an die Realtime-Sitzung übertragen. Ein Regressionstest prüft jedes Realtime-Werkzeug.
 
@@ -20,7 +22,7 @@ Dein persönliches Command Center für Windows. Stimme, Projektgedächtnis und n
 
 ## In drei Schritten starten
 
-1. Für einen festen App-Pfad `release/win-unpacked/Aegis.exe` starten (den ganzen Ordner zusammenlassen). Alternativ `Aegis-0.5.1-Windows.exe` als selbstentpackende Einzeldatei. Keine Node-Installation nötig. Der persönliche Build ist nicht code-signiert; Windows kann einen unbekannten Herausgeber melden. Herkunft prüfen, keine Windows-Schutzfunktionen abschalten.
+1. Für einen festen App-Pfad `release/win-unpacked/Aegis.exe` starten (den ganzen Ordner zusammenlassen). Alternativ `Aegis-0.6.0-Windows.exe` als selbstentpackende Einzeldatei. Keine Node-Installation nötig. Der persönliche Build ist nicht code-signiert; Windows kann einen unbekannten Herausgeber melden. Herkunft prüfen, keine Windows-Schutzfunktionen abschalten.
 2. **Einstellungen → KI-Verbindung:** eigenen OpenAI API-Schlüssel eintragen, speichern und „KI-Verbindung testen“ wählen. Ein ChatGPT-/Codex-Abo ersetzt kein API-Guthaben. Den Schlüssel nur in der App eingeben, niemals in GitHub oder einen Chat kopieren.
 3. **Workspace:** einen konkreten Projektordner freigeben. Mit eingerichtetem OpenAI-Zugang beginnt in der Desktop-App automatisch die Sprachbegrüßung. Für Texteingaben „Chat anzeigen“ wählen. Weitere Konten unter Einstellungen → Verbindungen einrichten.
 
@@ -91,7 +93,7 @@ npm run test:desktop
 npm run package
 ```
 
-Das portable Ergebnis liegt in `release/Aegis-0.5.1-Windows.exe`, der feste App-Pfad in `release/win-unpacked/Aegis.exe`. Der GitHub-Workflow testet und baut das Windows-Paket; Build-Artefakte werden 14 Tage aufgehoben. Ein privater Build wird nicht automatisch öffentlich veröffentlicht. Keine automatischen Updates; neue Versionen bewusst herunterladen.
+Das portable Ergebnis liegt in `release/Aegis-0.6.0-Windows.exe`, der feste App-Pfad in `release/win-unpacked/Aegis.exe`. Der GitHub-Workflow testet und baut das Windows-Paket; Build-Artefakte werden 14 Tage aufgehoben. Ein privater Build wird nicht automatisch öffentlich veröffentlicht. Keine automatischen Updates; neue Versionen bewusst herunterladen.
 
 Für isolierte Tests kann `AEGIS_DATA_DIR` gesetzt werden. `OPENAI_API_KEY` wird alternativ beim Start übernommen, wenn kein Schlüssel gespeichert ist; `.env` wird nicht automatisch geladen. Keine echten Keys für Tests verwenden.
 

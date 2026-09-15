@@ -31,6 +31,10 @@ try {
     ipcMain.removeHandler("aegis:invoke");
     ipcMain.handle("aegis:invoke", (_, operation, payload) => {
       const test = globalThis.voiceTest;
+      if (operation === "app.view" || operation === "app.control.ack") {
+        test.view = payload;
+        return { accepted: true };
+      }
       if (operation === "state") {
         test.polls++;
         return test.state;
@@ -160,7 +164,35 @@ try {
     .getByRole("button", { name: "Chat ausblenden", exact: true })
     .click();
   await expect(page.locator("#aegis-conversation")).toHaveCount(0);
-  await page.keyboard.press("Escape");
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].webContents.send("aegis:control", {
+      id: "test-nav",
+      action: "navigate",
+      target: "settings",
+    }),
+  );
+  await expect(page.locator("h1")).toContainText("Systemeinstellungen");
+  await expect
+    .poll(() => app.evaluate(() => globalThis.voiceTest.view?.voiceStatus))
+    .toBe("speaking");
+  assert.equal(await app.evaluate(() => globalThis.voiceTest.sessions), 1);
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].webContents.send("aegis:control", {
+      id: "test-home",
+      action: "navigate",
+      target: "command",
+    }),
+  );
+  await expect(page.locator(".orb-canvas")).toHaveAttribute(
+    "data-voice-status",
+    "speaking",
+  );
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].webContents.send("aegis:control", {
+      id: "test-stop",
+      action: "stop_voice",
+    }),
+  );
   await expect(page.locator(".orb-canvas")).toHaveAttribute(
     "data-voice-status",
     "idle",
@@ -205,7 +237,8 @@ try {
       automaticGreeting: true,
       transcriptOptIn: true,
       orbDuringSpeech: true,
-      escapeStops: true,
+      appControlStopsVoice: true,
+      navigationPreservesVoice: true,
       noRetryLoop: true,
       startupOffHonored: true,
     }),

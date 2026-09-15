@@ -15,9 +15,27 @@ const { outputText } = ts.transpileModule(source, {
     target: ts.ScriptTarget.ES2022,
   },
 });
-const { createVoiceSession } = await import(
+const { createVoiceSession, isVoiceStopCommand } = await import(
   `data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`
 );
+
+test("voice-stop phrases are explicit, not negated or quoted requests", () => {
+  for (const text of [
+    "Okay, Gespräch beenden.",
+    "Aegis, beende bitte das Gespräch.",
+    "Chat beenden",
+    "Mikrofon aus",
+    "Verbindung trennen bitte",
+  ])
+    assert.equal(isVoiceStopCommand(text), true, text);
+  for (const text of [
+    "Nicht das Gespräch beenden",
+    "Wie kann ich das Gespräch beenden?",
+    "Beende die Mail mit Grüßen",
+    "Ich möchte nicht die Verbindung trennen",
+  ])
+    assert.equal(isVoiceStopCommand(text), false, text);
+});
 
 function fixture(t, overrides = {}) {
   const sent = [],
@@ -150,6 +168,34 @@ function fixture(t, overrides = {}) {
     emit: (data) => channel.onmessage({ data: JSON.stringify(data) }),
   };
 }
+
+test("spoken stop releases microphone immediately without another response", async (t) => {
+  const f = fixture(t);
+  await f.session.start();
+  f.open();
+  const count = f.sent.length;
+  await f.emit({
+    type: "conversation.item.input_audio_transcription.completed",
+    transcript: "Okay, Gespräch beenden.",
+  });
+  assert.equal(f.stopped, 1);
+  assert.equal(f.statuses.at(-1), "idle");
+  assert.equal(f.sent.length, count);
+});
+test("app navigation is dispatched directly, not through a second text model", async (t) => {
+  const f = fixture(t);
+  await f.session.start();
+  f.open();
+  await f.emit({
+    type: "response.function_call_arguments.done",
+    name: "aegis_app",
+    call_id: "navigate-1",
+    arguments: JSON.stringify({ action: "navigate", target: "settings" }),
+  });
+  assert.equal(f.calls.at(-1).operation, "tools.execute");
+  assert.equal(f.calls.at(-1).payload.name, "aegis_app");
+  assert.equal(f.stopped, 0);
+});
 
 test("voice greets once after the session and channel are ready, without fake user messages", async (t) => {
   const f = fixture(t);
