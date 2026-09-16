@@ -7,6 +7,7 @@ type VoiceOptions = {
   onStatus: (status: string) => void;
   onTranscript: (role: "user" | "assistant", text: string) => void;
   onError: (error: string) => void;
+  onNotice?: (message: string) => void;
   onAudioLevel?: (level: number) => void;
 };
 export function isVoiceStopCommand(text: string) {
@@ -64,12 +65,28 @@ export function createVoiceSession(options: VoiceOptions) {
     usageIds.clear();
     options.onStatus("idle");
   }
-  async function start() {
+  async function start({ briefing = false }: { briefing?: boolean } = {}) {
     if (active) return;
     const generation = ++epoch;
     active = true;
     options.onStatus("connecting");
     try {
+      // Do the startup read before opening/billing the realtime audio session.
+      // Stop remains effective during the wait via the generation guard.
+      if (briefing) {
+        let briefingTimeout: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            options.invoke("startup.briefing").catch(() => {}),
+            new Promise((resolve) => {
+              briefingTimeout = setTimeout(resolve, 12000);
+            }),
+          ]);
+        } finally {
+          clearTimeout(briefingTimeout);
+        }
+        if (generation !== epoch) return;
+      }
       if (!navigator.mediaDevices?.getUserMedia)
         throw new Error(
           "Mikrofon nicht verfügbar. Bitte die Desktop-App verwenden.",
@@ -275,6 +292,16 @@ export function createVoiceSession(options: VoiceOptions) {
             stop();
             return;
           }
+          // A local, exact German navigation parser. No second model request.
+          // Backend coalesces a simultaneous model tool call to the same page.
+          void options
+            .invoke("app.voice.navigate", { text: data.transcript || "" })
+            .catch((error) => {
+              if (current())
+                options.onNotice?.(
+                  error.message || "Navigation fehlgeschlagen.",
+                );
+            });
         }
         if (
           [
@@ -343,6 +370,7 @@ export function createVoiceSession(options: VoiceOptions) {
       if (!current()) return;
       const result = await options.invoke("realtime.session", {
         sdp: offer.sdp,
+        startup: briefing,
       });
       if (generation !== epoch) return;
       greetingInstructions = result.greetingInstructions || "";

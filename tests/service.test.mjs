@@ -50,6 +50,62 @@ const response = (value) =>
     status: 200,
     headers: { "content-type": "application/json" },
   });
+test("automatic startup reads one real bounded mailbox excerpt before a paid greeting", async (t) => {
+  let reads = 0,
+    providerCalls = 0;
+  const published = [];
+  const s = await setup(t, {
+    desktop: {
+      publishDesk: (desk) => published.push(desk),
+      getDisplays: () => ({ connected: 2, secondaryActive: true }),
+    },
+    pluginBridge: {
+      status: () => ({ outlook: { connected: true } }),
+      catalog: async () => ({ plugins: [] }),
+      close() {},
+      outlookInbox: async ({ limit }) => {
+        reads++;
+        assert.equal(limit, 20);
+        return {
+          messages: [
+            {
+              id: "start-1",
+              subject: "Projektfrist",
+              from: "Projektgruppe",
+              receivedDateTime: new Date().toISOString(),
+              bodyPreview: "Frist morgen",
+              isRead: false,
+            },
+          ],
+          hasMore: true,
+        };
+      },
+    },
+    fetchImpl: async (url) => {
+      providerCalls++;
+      assert.match(url, /realtime\/calls$/);
+      return new Response("answer");
+    },
+  });
+  await s.invoke("settings.update", { apiKey: "test-key" });
+  const [first, duplicate] = await Promise.all([
+    s.invoke("startup.briefing"),
+    s.invoke("startup.briefing"),
+  ]);
+  assert.equal(reads, 1);
+  assert.equal(providerCalls, 0);
+  assert.equal(first.checkedMessages, 1);
+  assert.deepEqual(first, duplicate);
+  assert.equal(published.at(-1).scene.kind, "mail");
+  const voice = await s.invoke("realtime.session", {
+    startup: true,
+    sdp: "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n",
+  });
+  assert.equal(providerCalls, 1);
+  assert.match(voice.greetingInstructions, /Projektfrist/);
+  assert.match(voice.greetingInstructions, /Bildschirm 2/);
+  assert.match(voice.greetingInstructions, /geprüften Ausschnitt/);
+});
 
 test("plugin drafts lock double clicks and never overwrite a new view", async (t) => {
   let finish,
@@ -610,6 +666,9 @@ test("Realtime exchange keeps long-lived credentials outside renderer and builds
   const result = await s.invoke("realtime.session", { sdp: offer });
   assert.equal(result.sdp, "v=0\r\nanswer");
   assert.equal(session.type, "realtime");
+  assert.match(session.instructions, /aegis_app/);
+  assert.match(session.instructions, /Einstellungen.*settings/);
+  assert.match(session.instructions, /Plugins.*plugins/);
   assert.ok(session.tools.some((t) => t.name === "aegis_command"));
   assert.ok(session.tools.some((t) => t.name === "aegis_status"));
   assert.ok(session.tools.some((t) => t.name === "world_mail_reply"));

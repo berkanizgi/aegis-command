@@ -25,6 +25,12 @@ try {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.waitForFunction(() => window.aegis);
+  await page.evaluate(() =>
+    window.aegis.invoke("settings.update", {
+      useSecondDisplay: false,
+      launchFullscreen: false,
+    }),
+  );
   // Real Chromium permission path, simulated hardware only. No fake permission UI flag.
   for (let attempt = 0; attempt < 2; attempt++) {
     const audio = await page.evaluate(async () => {

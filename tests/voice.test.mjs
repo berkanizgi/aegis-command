@@ -124,6 +124,7 @@ function fixture(t, overrides = {}) {
   const session = createVoiceSession({
     invoke: async (operation, payload) => {
       calls.push({ operation, payload });
+      if (overrides.invoke) return overrides.invoke(operation, payload);
       return operation === "realtime.session"
         ? {
             sdp: "answer",
@@ -181,6 +182,35 @@ test("spoken stop releases microphone immediately without another response", asy
   assert.equal(f.stopped, 1);
   assert.equal(f.statuses.at(-1), "idle");
   assert.equal(f.sent.length, count);
+});
+test("spoken German navigation reaches local control without a paid text call", async (t) => {
+  const f = fixture(t);
+  await f.session.start();
+  f.open();
+  await f.emit({
+    type: "conversation.item.input_audio_transcription.completed",
+    transcript: "Geh mal in die Plugins",
+  });
+  assert.equal(f.calls.at(-1).operation, "app.voice.navigate");
+  assert.equal(f.calls.at(-1).payload.text, "Geh mal in die Plugins");
+  assert.equal(f.stopped, 0);
+  assert.ok(!f.calls.some((c) => c.operation === "chat"));
+});
+test("stopping during the startup mailbox check never opens a late microphone session", async (t) => {
+  let finish;
+  const f = fixture(t, {
+    invoke: () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  });
+  const starting = f.session.start({ briefing: true });
+  assert.equal(f.calls[0].operation, "startup.briefing");
+  f.session.stop();
+  finish({ status: "ready" });
+  await starting;
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.peer, undefined);
 });
 test("app navigation is dispatched directly, not through a second text model", async (t) => {
   const f = fixture(t);

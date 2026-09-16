@@ -38,6 +38,12 @@ try {
     timeout: 15000,
   });
   const state = await window.evaluate(() => window.aegis.invoke("state"));
+  await window.evaluate(() =>
+    window.aegis.invoke("settings.update", {
+      useSecondDisplay: false,
+      launchFullscreen: false,
+    }),
+  );
   const navigated = await window.evaluate(() =>
     window.aegis.invoke("tools.execute", {
       name: "aegis_app",

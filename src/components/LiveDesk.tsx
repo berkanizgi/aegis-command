@@ -886,8 +886,8 @@ export default function LiveDesk({
       return;
     setMode(scene.kind);
     setInput(
-      scene.data?.query ||
-        scene.data?.location?.query ||
+      scene.data?.query ??
+        scene.data?.location?.query ??
         (scene.title === "Dein Live Desk" ? homeCity : scene.title),
     );
   }, [scene?.id]);

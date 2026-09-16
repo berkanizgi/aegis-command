@@ -32,7 +32,7 @@ const child = spawn(
     stdio: "ignore",
   },
 );
-let browser;
+let browser, browserPid, browserControl;
 try {
   let ready = false;
   const deadline = Date.now() + 45000;
@@ -53,13 +53,30 @@ try {
     "Portable app did not expose its test debugging endpoint within 45 seconds",
   );
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-  const window = browser
-    .contexts()[0]
-    .pages()
-    .find((p) => p.url().startsWith("file:"));
+  browserControl = await browser.newBrowserCDPSession();
+  const { processInfo } = await browserControl.send(
+    "SystemInfo.getProcessInfo",
+  );
+  browserPid = processInfo.find((p) => p.type === "browser")?.id;
+  let window;
+  for (const candidate of browser.contexts()[0].pages()) {
+    if (
+      candidate.url().startsWith("file:") &&
+      (await candidate.evaluate(() => window.aegis?.surface === "primary"))
+    ) {
+      window = candidate;
+      break;
+    }
+  }
   assert.ok(window, "Missing app window");
   await window.waitForFunction(() => Boolean(window.aegis), { timeout: 15000 });
   const state = await window.evaluate(() => window.aegis.invoke("state"));
+  await window.evaluate(() =>
+    window.aegis.invoke("settings.update", {
+      useSecondDisplay: false,
+      launchFullscreen: false,
+    }),
+  );
   assert.equal(state.settings.name, "Boss");
   assert.equal(state.connectors.length, 5);
   assert.equal(state.settings.voiceOnStartup, true);
@@ -110,11 +127,20 @@ try {
   console.error(error);
   process.exitCode = 1;
 } finally {
-  if (child.pid)
+  // Disconnecting a Playwright CDP client is not the same as quitting Electron.
+  // Ask this test browser to exit normally before considering process cleanup.
+  await Promise.race([
+    browserControl?.send("Browser.close").catch(() => {}),
+    new Promise((resolve) => setTimeout(resolve, 2000)),
+  ]);
+  // The portable launcher may exit before Electron. Use the browser PID reported
+  // by OUR isolated debugging endpoint, never process names or unrelated windows.
+  const testPid = Number.isSafeInteger(browserPid) ? browserPid : child.pid;
+  if (testPid && (!browser || browser.isConnected()))
     await new Promise((resolve) =>
       execFile(
         "taskkill",
-        ["/PID", String(child.pid), "/T", "/F"],
+        ["/PID", String(testPid), "/T", "/F"],
         { windowsHide: true, timeout: 5000 },
         () => resolve(),
       ),

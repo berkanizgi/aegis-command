@@ -51,7 +51,16 @@ const cli = path.join(
 );
 const child = spawn(
   process.execPath,
-  [cli, "--projectDir", stage, "--win", "portable", "--publish", "never"],
+  [
+    cli,
+    "--projectDir",
+    stage,
+    "--win",
+    "portable",
+    "nsis",
+    "--publish",
+    "never",
+  ],
   { cwd: stage, windowsHide: true, stdio: "inherit", env: process.env },
 );
 child.once("error", (error) => {

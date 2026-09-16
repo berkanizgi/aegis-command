@@ -2,7 +2,9 @@
 
 Dein persönliches Command Center für Windows. Stimme, Projektgedächtnis und nachvollziehbare Aktionen – mit einer Oberfläche, die nach Zukunft aussieht.
 
-**Status: Version 0.6.0, kein universeller autonomer Computer-Agent.** Lokale Funktionen sind ohne KI nutzbar. Live-Sprache, freie KI-Aufträge und Kontodaten benötigen eigene Zugangsdaten. Die App enthält keine Beispieldaten und keine vorgetäuschten Verbindungen.
+**Status: Version 0.7.0, kein universeller autonomer Computer-Agent.** Lokale Funktionen sind ohne KI nutzbar. Live-Sprache, freie KI-Aufträge und Kontodaten benötigen eigene Zugangsdaten. Die App enthält keine Beispieldaten und keine vorgetäuschten Verbindungen.
+
+0.7.0 ergänzt den **Zwei-Bildschirm-Modus**: Vollbild-Sprachkern auf dem Hauptmonitor, Postfach/Recherche auf einem eigenen Informationsdisplay – ohne zweite KI-Sitzung. Deutsche Navigationsbefehle werden lokal erkannt, Fortschrittsupdates verdrängen Einstellungen nicht mehr. Beim automatischen Sprachstart kann ein begrenzter echter Postfach-Check die Begrüßung vorbereiten. Neu: Setup-Installer mit festem App-Pfad; Windows-Firewall-Freigaben bleiben eine bewusste Windows-Entscheidung. [Einrichtung und Grenzen](docs/DISPLAYS.md).
 
 0.6.0 ergänzt sichtbare Sprachsteuerung der App: „Öffne die Einstellungen“, „Geh zu Missionen“, „Öffne Chrome“ und „Gespräch beenden“. Die Sprache bleibt beim Seitenwechsel bestehen; außerhalb des Command Centers zeigt die Kopfleiste den Mikrofonstatus. Der Plugin-Zugang wird jetzt getrennt vom Katalog und von Microsoft Graph geprüft. **Plugins → Outlook Email → Verbindung testen** liest nur das Kontoprofil und zeigt die bestätigte Adresse. E-Mail-Abrufe laufen über begrenzte direkte Werkzeuge, ohne zusätzlichen KI-Agenten; Sende-, Lösch- und Weiterleitungswerkzeuge werden nicht aufgerufen. [Details und Prüfschritte](docs/PLUGINS.md).
 
@@ -22,13 +24,13 @@ Dein persönliches Command Center für Windows. Stimme, Projektgedächtnis und n
 
 ## In drei Schritten starten
 
-1. Für einen festen App-Pfad `release/win-unpacked/Aegis.exe` starten (den ganzen Ordner zusammenlassen). Alternativ `Aegis-0.6.0-Windows.exe` als selbstentpackende Einzeldatei. Keine Node-Installation nötig. Der persönliche Build ist nicht code-signiert; Windows kann einen unbekannten Herausgeber melden. Herkunft prüfen, keine Windows-Schutzfunktionen abschalten.
+1. Empfohlen: `Aegis-0.7.0-Setup.exe` installieren und die Aegis-Verknüpfung starten. Alternativ `release/win-unpacked/Aegis.exe` (den ganzen Ordner zusammenlassen) oder `Aegis-0.7.0-Windows.exe` als portable Einzeldatei. Keine Node-Installation nötig. Der persönliche Build ist nicht code-signiert; Windows kann einen unbekannten Herausgeber melden. Herkunft prüfen, keine Windows-Schutzfunktionen abschalten.
 2. **Einstellungen → KI-Verbindung:** eigenen OpenAI API-Schlüssel eintragen, speichern und „KI-Verbindung testen“ wählen. Ein ChatGPT-/Codex-Abo ersetzt kein API-Guthaben. Den Schlüssel nur in der App eingeben, niemals in GitHub oder einen Chat kopieren.
 3. **Workspace:** einen konkreten Projektordner freigeben. Mit eingerichtetem OpenAI-Zugang beginnt in der Desktop-App automatisch die Sprachbegrüßung. Für Texteingaben „Chat anzeigen“ wählen. Weitere Konten unter Einstellungen → Verbindungen einrichten.
 
 Mit **Ctrl + Space** schaltest du die Sprache in Aegis um. **Ctrl + Shift + Space** öffnet Aegis systemweit und schaltet die Sprache um. Das Kreuz schließt das Fenster in den Tray; über das Tray-Menü → „Aegis beenden“ wird die App vollständig beendet. Autostart ist optional und muss in Einstellungen aktiviert werden.
 
-**Mikrofon und Kosten:** „Beim Öffnen begrüßen & zuhören“ ist standardmäßig an, auch nach diesem Update. Bei eingerichtetem OpenAI-Zugang aktiviert es beim Laden der Desktop-App das Mikrofon und eine kostenpflichtige Realtime-Sitzung. In Einstellungen abschaltbar. Escape oder der Sprachknopf beendet die Sitzung; nach spätestens 15 Minuten wird sie automatisch beendet. Kein automatischer Neustart nach Abbruch oder Fehler. Die Begrüßung kennt lokale Einstellungen und gespeicherte Aufgaben, behauptet aber keine gerade erfolgte Mail-/Kalenderprüfung.
+**Mikrofon und Kosten:** „Beim Öffnen begrüßen & zuhören“ ist standardmäßig an, auch nach diesem Update. Bei eingerichtetem OpenAI-Zugang aktiviert es beim Laden der Desktop-App das Mikrofon und eine kostenpflichtige Realtime-Sitzung. In Einstellungen abschaltbar. Escape oder der Sprachknopf beendet die Sitzung; nach spätestens 15 Minuten wird sie automatisch beendet. Kein automatischer Neustart nach Abbruch oder Fehler. Der optionale Postfach-Startcheck liest einmal höchstens 20 Nachrichten vor der Sprachverbindung; nur erfolgreich abgerufene Ergebnisse dürfen in der Begrüßung als geprüft bezeichnet werden. Keine automatische Kalenderprüfung.
 
 ## Was daran mehr ist als ein Sprachchat
 
@@ -93,7 +95,7 @@ npm run test:desktop
 npm run package
 ```
 
-Das portable Ergebnis liegt in `release/Aegis-0.6.0-Windows.exe`, der feste App-Pfad in `release/win-unpacked/Aegis.exe`. Der GitHub-Workflow testet und baut das Windows-Paket; Build-Artefakte werden 14 Tage aufgehoben. Ein privater Build wird nicht automatisch öffentlich veröffentlicht. Keine automatischen Updates; neue Versionen bewusst herunterladen.
+Der Installer liegt in `release/Aegis-0.7.0-Setup.exe`, die portable Variante in `release/Aegis-0.7.0-Windows.exe`, der entpackte App-Pfad in `release/win-unpacked/Aegis.exe`. Der GitHub-Workflow testet und baut beide Windows-Pakete; Build-Artefakte werden 14 Tage aufgehoben. Ein privater Build wird nicht automatisch öffentlich veröffentlicht. Keine automatischen Updates; neue Versionen bewusst herunterladen.
 
 Für isolierte Tests kann `AEGIS_DATA_DIR` gesetzt werden. `OPENAI_API_KEY` wird alternativ beim Start übernommen, wenn kein Schlüssel gespeichert ist; `.env` wird nicht automatisch geladen. Keine echten Keys für Tests verwenden.
 

@@ -1,11 +1,60 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createAppControl } from "../server/app-control.mjs";
+import {
+  createAppControl,
+  spokenNavigation,
+  normalizePage,
+} from "../server/app-control.mjs";
 import { createRequire } from "node:module";
 import { EventEmitter } from "node:events";
 const { openApplication } = createRequire(import.meta.url)(
   "../electron/app-launcher.cjs",
 );
+test("German voice navigation accepts direct commands, never negations or quoted instructions", () => {
+  for (const text of [
+    "Geh mal in die Einstellungen",
+    "Okay, öffne bitte die Einstellungen.",
+    "Aegis, zeig mir mal die Einstellungen",
+    "Wechsle zu den Einstellungen",
+  ])
+    assert.equal(spokenNavigation(text), "settings", text);
+  for (const text of [
+    "Geh mal in die Plugin",
+    "Öffne die Plugins",
+    "Gehe zu Plugins bitte",
+  ])
+    assert.equal(spokenNavigation(text), "plugins", text);
+  for (const text of [
+    "Nicht in die Einstellungen gehen",
+    "Wie öffne ich die Einstellungen?",
+    "Schreibe: Öffne die Plugins",
+    "Öffne die Einstellungen und lösche alles",
+    "Öffne __proto__",
+    "Öffne Chrome",
+  ])
+    assert.equal(spokenNavigation(text), null, text);
+  assert.equal(normalizePage("Einstellungen"), "settings");
+});
+test("duplicate navigation from transcript and model is coalesced; newer navigation wins", async () => {
+  const requests = [];
+  const c = createAppControl({
+    desktop: { publishControl: (r) => requests.push(r) },
+    overview: () => ({}),
+    activity: async () => {},
+  });
+  const a = c.execute({ action: "navigate", target: "Einstellungen" });
+  const b = c.execute({ action: "navigate", target: "settings" });
+  assert.equal(requests.length, 1);
+  c.ack({ id: requests[0].id, page: "settings", voiceStatus: "listening" });
+  assert.equal((await a).completed, true);
+  assert.equal((await b).completed, true);
+  const older = c.execute({ action: "navigate", target: "plugins" });
+  const newer = c.execute({ action: "navigate", target: "missions" });
+  assert.equal((await older).superseded, true);
+  c.ack({ id: requests.at(-1).id, page: "missions" });
+  await newer;
+  c.close();
+});
 
 test("navigation needs the committed target view acknowledgement", async () => {
   let request;

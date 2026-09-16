@@ -10,6 +10,51 @@ export const APP_PAGES = [
   "activity",
   "settings",
 ];
+const pageAliases = {
+  einstellungen: "settings",
+  systemeinstellungen: "settings",
+  einstellung: "settings",
+  plugin: "plugins",
+  erweiterungen: "plugins",
+  "plug ins": "plugins",
+  "plug-ins": "plugins",
+  missionen: "missions",
+  mission: "missions",
+  gedächtnis: "memory",
+  erinnerungen: "memory",
+  automationen: "routines",
+  routinen: "routines",
+  arbeitsbereich: "workspace",
+  aktivität: "activity",
+  aktivitäten: "activity",
+  verlauf: "activity",
+  "command center": "command",
+  hauptbildschirm: "command",
+  startseite: "command",
+};
+export function normalizePage(target) {
+  const value = String(target || "")
+    .toLocaleLowerCase("de")
+    .trim();
+  return APP_PAGES.includes(value)
+    ? value
+    : Object.hasOwn(pageAliases, value)
+      ? pageAliases[value]
+      : undefined;
+}
+export function spokenNavigation(text) {
+  const value = String(text || "")
+    .toLocaleLowerCase("de")
+    .replace(/[.,!?]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  // Only direct, whole-utterance requests. No quoted, negated or hypothetical commands.
+  const match =
+    /^(?:(?:okay|ok|aegis|bitte) )*(?:(?:geh|gehe|wechsel|wechsle|navigiere)(?: bitte| mal| jetzt)*(?: in| zu| auf)(?: die| den| das| dem)? |(?:öffne|öffnen|zeig|zeige)(?: mir| bitte| mal| jetzt)*(?: die| den| das)? )(.+?)(?: bitte| mal| jetzt)*$/.exec(
+      value,
+    );
+  return match ? normalizePage(match[1]) || null : null;
+}
 export const appControlTool = {
   type: "function",
   name: "aegis_app",
@@ -23,7 +68,11 @@ export const appControlTool = {
         type: "string",
         enum: ["navigate", "inspect", "stop_voice", "open_application"],
       },
-      target: { type: "string" },
+      target: {
+        type: "string",
+        description:
+          "Navigation: Einstellungen=settings, Plugin/Plugins=plugins, Missionen=missions, Gedächtnis=memory, Automationen=routines, Workspace=workspace, Aktivität=activity, Command Center=command. For applications: chrome/edge/notepad/calculator.",
+      },
     },
     required: ["action"],
     additionalProperties: false,
@@ -62,6 +111,7 @@ export function createAppControl({ desktop, overview, activity }) {
     return { accepted: true };
   }
   async function execute({ action, target }) {
+    if (action === "navigate") target = normalizePage(target);
     if (action === "inspect") return overview();
     if (action === "open_application") {
       if (!["chrome", "edge", "notepad", "calculator"].includes(target))
@@ -88,8 +138,31 @@ export function createAppControl({ desktop, overview, activity }) {
       throw new Error(
         "App-Steuerung benötigt die laufende Desktop-Oberfläche.",
       );
+    if (action === "navigate" && view.checkedAt && view.page === target)
+      return {
+        completed: true,
+        action,
+        view: { ...view },
+        overview: overview(),
+      };
+    for (const task of pending.values()) {
+      if (
+        action === "navigate" &&
+        task.action === action &&
+        task.target === target
+      )
+        return task.promise;
+    }
+    // A newer explicit navigation supersedes an older uncommitted one.
+    for (const [key, task] of pending) {
+      if (action === "navigate" && task.action === action) {
+        clearTimeout(task.timer);
+        pending.delete(key);
+        task.resolve({ completed: false, superseded: true });
+      }
+    }
     const id = randomUUID();
-    const result = await new Promise((resolve, reject) => {
+    const promise = new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         pending.delete(id);
         reject(
@@ -107,6 +180,9 @@ export function createAppControl({ desktop, overview, activity }) {
         reject(e);
       }
     });
+    if (pending.has(id)) pending.get(id).promise = promise;
+    const result = await promise;
+    if (!result.completed) return result;
     await activity(
       "App-Steuerung",
       action === "stop_voice"

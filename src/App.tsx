@@ -324,6 +324,9 @@ export default function App() {
     [focusMinutes, setFocusMinutes] = useState(45),
     [viewConversation, setViewConversation] = useState(false);
   const [controlRequest, setControlRequest] = useState<Row | null>(null);
+  const displayState = useRef<Row>({});
+  const deskScene = useRef<string | undefined>(undefined);
+  displayState.current = state.displays || {};
   const voice = useRef<ReturnType<typeof createVoiceSession> | null>(null),
     voiceLevel = useRef(0),
     startupAttempted = useRef(false),
@@ -371,7 +374,21 @@ export default function App() {
             ? previous
             : { ...previous, desk },
         );
-        if (desk.visible) setPage("command");
+        // Progress/draft updates must not steal focus back from Settings/Plugins.
+        const newScene = desk.scene?.id !== deskScene.current;
+        deskScene.current = desk.scene?.id;
+        if (desk.visible && newScene && !displayState.current.secondaryActive)
+          setPage("command");
+      }),
+    [],
+  );
+  useEffect(
+    () =>
+      window.aegis?.onDisplays?.((displays: Row) => {
+        const wasSecondary = displayState.current.secondaryActive;
+        displayState.current = displays;
+        setState((previous) => ({ ...previous, displays }));
+        if (wasSecondary && !displays.secondaryActive) setPage("command");
       }),
     [],
   );
@@ -457,7 +474,7 @@ export default function App() {
     "error",
     "closed",
   ].includes(voiceStatus);
-  async function toggleVoice() {
+  async function toggleVoice(startup = false) {
     startupAttempted.current = true;
     if (voiceActive) {
       await voice.current?.stop();
@@ -475,6 +492,7 @@ export default function App() {
     if (!voice.current)
       voice.current = createVoiceSession({
         invoke,
+        onNotice: (text) => notify(text, true),
         onStatus: (status: string) => setVoiceStatus(status),
         onAudioLevel: (level: number) => {
           voiceLevel.current = level;
@@ -493,7 +511,7 @@ export default function App() {
       });
     try {
       setVoiceStatus("connecting");
-      await voice.current.start();
+      await voice.current.start({ briefing: startup });
     } catch (error) {
       setVoiceStatus("error");
       notify(error instanceof Error ? error.message : String(error), true);
@@ -513,7 +531,7 @@ export default function App() {
     // Cancel the scheduled start on unmount/StrictMode cleanup; never reconnect
     // from the state polling loop after a deliberate stop or a provider error.
     const timer = setTimeout(() => {
-      void toggleVoice();
+      void toggleVoice(true);
     }, 500);
     return () => clearTimeout(timer);
   }, [
@@ -536,6 +554,10 @@ export default function App() {
       voice.current?.stop(),
     );
     const keyboard = (e: KeyboardEvent) => {
+      if (e.key === "F11") {
+        e.preventDefault();
+        window.aegis?.windowControl?.("fullscreen");
+      }
       if (e.code === "Space" && e.ctrlKey) {
         e.preventDefault();
         handler();
@@ -793,7 +815,18 @@ export default function App() {
                   Neue Mission
                 </Button>
               </div>
-              {!state.desk?.visible && (
+              {state.displays?.secondaryActive && (
+                <div className="display-link">
+                  <Monitor size={16} />
+                  <span>Live-Ausgabe auf Bildschirm 2</span>
+                  <small>
+                    {state.desk?.visible
+                      ? state.desk.scene?.title
+                      : "Bereit für Postfach & Recherche"}
+                  </small>
+                </div>
+              )}
+              {(!state.desk?.visible || state.displays?.secondaryActive) && (
                 <DeskLaunchers
                   open={() => {
                     void act("tools.execute", {
@@ -804,7 +837,7 @@ export default function App() {
                 />
               )}
               <div
-                className={`command-grid ${state.desk?.visible ? "desk-open" : ""}`}
+                className={`command-grid ${state.desk?.visible && !state.displays?.secondaryActive ? "desk-open" : ""}`}
               >
                 <section className="core-panel panel">
                   <div className="panel-top">
@@ -941,7 +974,7 @@ export default function App() {
                   <div className="voice-control" aria-live="polite">
                     <button
                       className={`voice-button ${voiceActive ? "active" : ""}`}
-                      onClick={toggleVoice}
+                      onClick={() => void toggleVoice()}
                       aria-label={
                         voiceActive
                           ? "Sprachverbindung beenden"
@@ -1028,7 +1061,7 @@ export default function App() {
                     </span>
                   </div>
                 </section>
-                {state.desk?.visible && (
+                {state.desk?.visible && !state.displays?.secondaryActive && (
                   <LiveDesk
                     desk={state.desk}
                     homeCity={state.settings.homeCity || ""}
@@ -1772,7 +1805,7 @@ export default function App() {
                 ? "OPENAI CONFIGURED"
                 : "AI NOT CONNECTED"}
             <span className="status-divider" />
-            AEGIS v0.6.0
+            AEGIS v0.7.0
           </div>
         </footer>
       </div>
@@ -2546,6 +2579,9 @@ function SettingsPage({
       dailyRequestLimit: Number(values.dailyRequestLimit),
       autoSpeak: !!values.autoSpeak,
       voiceOnStartup: !!values.voiceOnStartup,
+      launchFullscreen: !!values.launchFullscreen,
+      useSecondDisplay: !!values.useSecondDisplay,
+      startupMailBriefing: !!values.startupMailBriefing,
       economyMode: !!values.economyMode,
       masterProtocol: !!values.masterProtocol,
       homeCity: values.homeCity || "",
@@ -2822,6 +2858,48 @@ function SettingsPage({
               type="checkbox"
               checked={!!values.voiceOnStartup}
               onChange={(e) => set("voiceOnStartup", e.target.checked)}
+            />
+          </label>
+          <label className="toggle-row">
+            <div>
+              <strong>Postfach beim Sprachstart prüfen</strong>
+              <span>
+                Beim automatischen Start einmal die letzten 20
+                Outlook-Nachrichten lesen und kurz einordnen. Kein Senden, keine
+                zusätzlichen Textmodell-Aufrufe. Der geprüfte Ausschnitt wird
+                angezeigt.
+              </span>
+            </div>
+            <input
+              type="checkbox"
+              checked={!!values.startupMailBriefing}
+              onChange={(e) => set("startupMailBriefing", e.target.checked)}
+            />
+          </label>
+          <label className="toggle-row">
+            <div>
+              <strong>Im Vollbild starten</strong>
+              <span>F11 wechselt jederzeit zurück in den Fenstermodus.</span>
+            </div>
+            <input
+              type="checkbox"
+              checked={!!values.launchFullscreen}
+              onChange={(e) => set("launchFullscreen", e.target.checked)}
+            />
+          </label>
+          <label className="toggle-row">
+            <div>
+              <strong>Zweiten Bildschirm nutzen</strong>
+              <span>
+                Sprachkern hier, Postfach und Recherche auf dem zweiten Display.
+                Ohne zweiten Bildschirm bleibt alles hier. Windows muss auf
+                „Erweitern“ stehen (Win + P).
+              </span>
+            </div>
+            <input
+              type="checkbox"
+              checked={!!values.useSecondDisplay}
+              onChange={(e) => set("useSecondDisplay", e.target.checked)}
             />
           </label>
           <label className="toggle-row">

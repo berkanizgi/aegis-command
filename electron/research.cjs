@@ -2,8 +2,13 @@ const { WebContentsView, session } = require("electron");
 
 // Separate from the Browser Operator: no preload, no AI clicks, no credentials,
 // downloads or device permissions. Only visible text can be returned to the AI.
-function createResearchView(parent, allowedUrl) {
+function createResearchView(
+  parent,
+  allowedUrl,
+  stopVoice = () => parent()?.webContents.send("aegis:voice-stop"),
+) {
   let view,
+    attachedHost,
     bounds,
     visible = false,
     serial = 0;
@@ -38,7 +43,7 @@ function createResearchView(parent, allowedUrl) {
     view.webContents.on("before-input-event", (event, input) => {
       if (input.type === "keyDown" && input.key === "Escape") {
         event.preventDefault();
-        parent()?.webContents.send("aegis:voice-stop");
+        stopVoice();
       }
     });
     // Keep this a source reader. New source navigation is selected explicitly
@@ -53,9 +58,24 @@ function createResearchView(parent, allowedUrl) {
         }
       });
     view.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-    parent()?.contentView.addChildView(view);
+    rehost();
     view.setVisible(false);
     return view;
+  }
+  function rehost() {
+    const next = parent();
+    if (!view || view.webContents.isDestroyed() || next === attachedHost)
+      return;
+    const moved = !!attachedHost;
+    if (attachedHost && !attachedHost.isDestroyed())
+      attachedHost.contentView.removeChildView(view);
+    attachedHost = next;
+    attachedHost?.contentView.addChildView(view);
+    if (moved) {
+      bounds = null;
+      visible = false;
+      view.setVisible(false);
+    }
   }
   function layout(value) {
     const host = parent();
@@ -111,6 +131,7 @@ function createResearchView(parent, allowedUrl) {
   }
   return {
     open,
+    rehost,
     layout,
     hide,
     close() {

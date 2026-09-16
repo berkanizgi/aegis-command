@@ -12,6 +12,7 @@ const {
   Menu,
   nativeImage,
   session,
+  screen,
 } = require("electron");
 const path = require("node:path");
 const os = require("node:os");
@@ -22,12 +23,17 @@ const { isTrustedFile } = require("./trust.cjs");
 const { installAudioPermissions } = require("./permissions.cjs");
 const { createResearchView } = require("./research.cjs");
 const { openApplication } = require("./app-launcher.cjs");
+const {
+  createDisplayManager,
+  informationOperationAllowed,
+} = require("./displays.cjs");
 if (process.env.AEGIS_DATA_DIR)
   app.setPath("userData", path.resolve(process.env.AEGIS_DATA_DIR));
 app.setName("Aegis");
 let win,
   service,
   tray,
+  displays,
   quitting = false,
   shadowTimer;
 const devUrl = process.env.AEGIS_DEV_URL;
@@ -42,10 +48,11 @@ function safeExternal(raw) {
     throw new Error("Nur HTTP(S)-Links sind erlaubt.");
   return shell.openExternal(url.href);
 }
-function trusted(sender) {
+function trustedWindow(sender, window) {
   return (
-    win &&
-    sender === win.webContents &&
+    window &&
+    !window.isDestroyed() &&
+    sender === window.webContents &&
     (devUrl
       ? sender.getURL().startsWith(new URL(devUrl).origin + "/")
       : isTrustedFile(
@@ -53,6 +60,53 @@ function trusted(sender) {
           path.join(appRoot, "dist", "index.html"),
         ))
   );
+}
+const trusted = (sender) => trustedWindow(sender, win);
+function protectWindow(window) {
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    safeExternal(url).catch(() => {});
+    return { action: "deny" };
+  });
+  window.webContents.on("will-navigate", (event, url) => {
+    if (url !== window.webContents.getURL()) event.preventDefault();
+  });
+  window.webContents.on("before-input-event", (event, input) => {
+    if (input.type === "keyDown" && input.key === "F11") {
+      event.preventDefault();
+      window.setFullScreen(!window.isFullScreen());
+    }
+    if (input.type === "keyDown" && input.key === "Escape" && window !== win)
+      win?.webContents.send("aegis:voice-stop");
+  });
+}
+function createInformationWindow(display) {
+  const window = new BrowserWindow({
+    ...display.bounds,
+    title: "Aegis · Informationsdisplay",
+    frame: false,
+    backgroundColor: "#050b12",
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      additionalArguments: ["--aegis-surface=information"],
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+    },
+  });
+  protectWindow(window);
+  window.once("ready-to-show", () => {
+    if (win?.isVisible()) window.showInactive();
+  });
+  const loaded = devUrl
+    ? window.loadURL(devUrl)
+    : window.loadFile(path.join(appRoot, "dist", "index.html"));
+  loaded.catch((error) => {
+    console.error("Aegis information display could not load:", error.message);
+    if (!window.isDestroyed()) window.close();
+  });
+  return window;
 }
 const foregroundScript = `Add-Type -TypeDefinition 'using System; using System.Text; using System.Runtime.InteropServices; public class AegisWindow { [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n); }'; $aegisText = New-Object System.Text.StringBuilder 512; [void][AegisWindow]::GetWindowText([AegisWindow]::GetForegroundWindow(), $aegisText, 512); $aegisText.ToString()`;
 function activeWindow() {
@@ -86,10 +140,13 @@ async function captureScreen() {
   if (choice.response === 0) throw new Error("Bildschirmfreigabe abgebrochen.");
   return available[choice.response - 1].thumbnail.toDataURL();
 }
-async function createWindow() {
+async function createWindow(settings) {
   win = new BrowserWindow({
     width: 1500,
     height: 980,
+    ...(settings.launchFullscreen !== false
+      ? screen.getPrimaryDisplay().bounds
+      : {}),
     minWidth: 940,
     minHeight: 680,
     title: "Aegis",
@@ -105,20 +162,11 @@ async function createWindow() {
       autoplayPolicy: "no-user-gesture-required",
     },
   });
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    safeExternal(url).catch(() => {});
-    return { action: "deny" };
-  });
-  win.webContents.on("will-navigate", (event, url) => {
-    if (url !== win.webContents.getURL()) event.preventDefault();
-  });
-  win.once("ready-to-show", () => {
-    if (!process.argv.includes("--hidden")) win.show();
-  });
+  protectWindow(win);
   win.on("close", (event) => {
     if (tray && !quitting) {
       event.preventDefault();
-      win.hide();
+      displays?.hide();
     }
   });
   if (devUrl) await win.loadURL(devUrl);
@@ -127,7 +175,7 @@ async function createWindow() {
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on("second-instance", () => {
-    win?.show();
+    displays?.show();
     win?.focus();
   });
   app
@@ -139,9 +187,26 @@ else {
       const { publicWebUrl } = await import(
         pathToFileURL(path.join(appRoot, "server", "world.mjs")).href
       );
-      const research = createResearchView(() => win, publicWebUrl);
+      const research = createResearchView(
+        () => displays?.informationHost() || win,
+        publicWebUrl,
+        () => win?.webContents.send("aegis:voice-stop"),
+      );
+      displays = createDisplayManager({
+        screen,
+        primary: () => win,
+        createSecondary: createInformationWindow,
+        changed: (value) => {
+          research.rehost();
+          for (const window of [win, displays?.secondary()])
+            if (window && !window.isDestroyed())
+              window.webContents.send("aegis:displays", value);
+        },
+      });
       const desktop = {
         research,
+        getDisplays: () => displays.state(),
+        configureDisplays: (settings) => displays.configure(settings),
         openApplication,
         publishControl: (value) => {
           if (!win || win.isDestroyed())
@@ -150,8 +215,9 @@ else {
           win.webContents.send("aegis:control", value);
         },
         publishDesk: (desk) => {
-          if (win && !win.isDestroyed())
-            win.webContents.send("aegis:desk", desk);
+          for (const window of [win, displays.secondary()])
+            if (window && !window.isDestroyed())
+              window.webContents.send("aegis:desk", desk);
         },
         browser: createBrowserOperator(() => win),
         pickFolder: async () => {
@@ -202,20 +268,40 @@ else {
         desktop,
       });
       ipcMain.handle("aegis:invoke", async (event, operation, payload) => {
-        if (!trusted(event.sender) || typeof operation !== "string")
+        if (
+          event.senderFrame !== event.sender.mainFrame ||
+          typeof operation !== "string" ||
+          !(
+            trusted(event.sender) ||
+            (trustedWindow(event.sender, displays.secondary()) &&
+              informationOperationAllowed(operation, payload))
+          )
+        )
           throw new Error("Nicht autorisierter Aufruf.");
         return service.invoke(operation, payload || {});
       });
       ipcMain.on("aegis:window", (event, action) => {
-        if (!trusted(event.sender)) return;
-        if (action === "minimize") win.minimize();
+        if (event.senderFrame !== event.sender.mainFrame) return;
+        const window = trusted(event.sender)
+          ? win
+          : trustedWindow(event.sender, displays.secondary())
+            ? displays.secondary()
+            : null;
+        if (!window) return;
+        if (action === "minimize") window.minimize();
         if (action === "maximize")
-          win.isMaximized() ? win.unmaximize() : win.maximize();
-        if (action === "close") win.close();
+          window.isFullScreen()
+            ? window.setFullScreen(false)
+            : window.isMaximized()
+              ? window.unmaximize()
+              : window.maximize();
+        if (action === "fullscreen")
+          window.setFullScreen(!window.isFullScreen());
+        if (action === "close") window.close();
       });
       ipcMain.on("aegis:research-layout", (event, value) => {
         if (
-          trusted(event.sender) &&
+          trustedWindow(event.sender, displays.informationHost()) &&
           event.senderFrame === event.sender.mainFrame
         )
           research.layout(value);
@@ -225,8 +311,16 @@ else {
           ? url.startsWith(new URL(devUrl).origin + "/")
           : isTrustedFile(url, path.join(appRoot, "dist", "index.html")),
       );
-      await createWindow();
-      win.on("resize", () => research.layout({ visible: false }));
+      const startupSettings = (await service.invoke("state")).settings;
+      await createWindow(startupSettings);
+      displays.configure(startupSettings);
+      // Configure after the renderer has loaded, before showing either surface.
+      // A hidden BrowserWindow created already-fullscreen can stall on Windows.
+      if (!process.argv.includes("--hidden")) displays.show();
+      win.on("show", () => displays.secondary()?.showInactive());
+      win.on("hide", () => displays.secondary()?.hide());
+      win.on("minimize", () => displays.secondary()?.hide());
+      win.on("restore", () => displays.secondary()?.showInactive());
       const iconPath = path.join(appRoot, "dist", "aegis-icon.png");
       const icon = nativeImage.createFromPath(iconPath);
       if (!icon.isEmpty()) {
@@ -234,7 +328,7 @@ else {
         tray.setToolTip("Aegis · Personal Command OS");
         tray.setContextMenu(
           Menu.buildFromTemplate([
-            { label: "Command Center öffnen", click: () => win.show() },
+            { label: "Command Center öffnen", click: () => displays.show() },
             {
               label: "Sprachsteuerung",
               click: () => {
@@ -252,7 +346,7 @@ else {
             },
           ]),
         );
-        tray.on("double-click", () => win.show());
+        tray.on("double-click", () => displays.show());
       }
       globalShortcut.register("CommandOrControl+Shift+Space", () => {
         win.show();
@@ -295,6 +389,7 @@ else {
   let shutdownStarted = false;
   app.on("before-quit", (event) => {
     quitting = true;
+    displays?.close();
     clearInterval(shadowTimer);
     globalShortcut.unregisterAll();
     if (service && !shutdownStarted) {

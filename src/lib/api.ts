@@ -12,6 +12,7 @@ export interface AegisState {
   shadow: Row;
   usage: Row;
   desk?: Row;
+  displays?: Row;
 }
 declare global {
   interface Window {
@@ -55,6 +56,9 @@ export const initialState: AegisState = {
     realtimeModel: "gpt-realtime-mini",
     voice: "cedar",
     voiceOnStartup: true,
+    launchFullscreen: true,
+    useSecondDisplay: true,
+    startupMailBriefing: true,
     economyMode: true,
     masterProtocol: true,
     speechHints:

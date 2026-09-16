@@ -21,6 +21,12 @@ const app = await electron.launch({
 try {
   const page = await app.firstWindow();
   await page.waitForFunction(() => window.aegis);
+  await page.evaluate(() =>
+    window.aegis.invoke("settings.update", {
+      useSecondDisplay: false,
+      launchFullscreen: false,
+    }),
+  );
   await app.evaluate(async ({ app, BrowserWindow, ipcMain }, dataDir) => {
     const path = process.getBuiltinModule("node:path");
     const require = process

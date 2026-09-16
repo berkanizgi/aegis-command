@@ -1,6 +1,6 @@
 {
   "name": "aegis-command",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "author": "Berkan Izgi",
   "type": "module",
@@ -20,6 +20,7 @@
     "test:live-desk": "node scripts/smoke-live-desk.mjs",
     "test:plugins": "node scripts/smoke-plugins.mjs",
     "test:portable": "node scripts/smoke-portable.mjs",
+    "test:displays": "node scripts/smoke-displays.mjs",
     "format": "prettier --write src server electron scripts tests docs README.md package.json vite.config.ts"
   },
   "dependencies": {
@@ -54,12 +55,25 @@
     "asar": true,
     "electronDist": "node_modules/electron/dist",
     "win": {
-      "target": "portable",
+      "target": [
+        "portable",
+        "nsis"
+      ],
       "icon": "public/aegis-icon.ico",
       "signExecutable": false
     },
     "portable": {
       "artifactName": "Aegis-${version}-Windows.exe"
+    },
+    "nsis": {
+      "artifactName": "Aegis-${version}-Setup.exe",
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": false,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "runAfterFinish": false
     }
   }
 }

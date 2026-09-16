@@ -1,5 +1,13 @@
 const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("aegis", {
+  surface: process.argv.includes("--aegis-surface=information")
+    ? "information"
+    : "primary",
+  onDisplays: (callback) => {
+    const listener = (_, value) => callback(value);
+    ipcRenderer.on("aegis:displays", listener);
+    return () => ipcRenderer.removeListener("aegis:displays", listener);
+  },
   invoke: (operation, payload = {}) =>
     ipcRenderer.invoke("aegis:invoke", operation, payload),
   windowControl: (action) => ipcRenderer.send("aegis:window", action),

@@ -2953,6 +2953,154 @@ pre {
   min-width: 0;
   font-size: 10px;
 }
+.display-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 14px 20px;
+  border: 1px solid #74e8c92a;
+  border-radius: 12px;
+  color: #91dbcb;
+  background: #10251f66;
+}
+.display-link small {
+  margin-left: auto;
+  color: #7e9b9c;
+}
+.information-display {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  color: #c3e1e6;
+  background:
+    radial-gradient(ellipse at 65% 0%, #153e3655, transparent 65%), #060e15;
+}
+.information-header {
+  min-height: 76px;
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid #8fc6be22;
+  -webkit-app-region: drag;
+}
+.information-header > div {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.information-header strong {
+  letter-spacing: 3px;
+}
+.information-header strong span {
+  font-size: 10px;
+  color: #709c98;
+  margin-left: 12px;
+}
+.information-controls {
+  -webkit-app-region: no-drag;
+}
+.information-controls button,
+.display-notice button {
+  background: transparent;
+  color: #b0d1cb;
+  border: 0;
+  padding: 8px;
+  cursor: pointer;
+}
+.information-display > main {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+}
+.information-display .live-desk {
+  min-height: calc(100vh - 156px);
+}
+.information-display > footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 28px;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: #587875;
+}
+.display-standby {
+  min-height: calc(100vh - 156px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 22px;
+}
+.display-standby h1 {
+  font-size: clamp(28px, 3vw, 48px);
+  letter-spacing: -1.5px;
+  margin: 0;
+}
+.display-standby p {
+  line-height: 1.9;
+  color: #7d9ba7;
+}
+.display-standby small {
+  color: #53736f;
+  margin-top: 20px;
+}
+.display-orbits {
+  position: relative;
+  width: 240px;
+  height: 240px;
+  display: grid;
+  place-items: center;
+  color: #88dccc;
+  margin-bottom: 16px;
+}
+.display-orbits i {
+  position: absolute;
+  inset: 8px;
+  border: 1px solid #73d9c54a;
+  border-top-color: #9ae6ce;
+  border-radius: 50%;
+  animation: display-orbit 24s linear infinite;
+}
+.display-orbits i:nth-child(2) {
+  inset: 35px;
+  border-style: dashed;
+  animation-direction: reverse;
+}
+.display-orbits i:nth-child(3) {
+  inset: 62px;
+  box-shadow:
+    0 0 60px #3db99122,
+    inset 0 0 38px #3db99122;
+}
+@keyframes display-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .display-orbits i {
+    animation: none;
+  }
+}
+.display-notice {
+  position: fixed;
+  bottom: 50px;
+  left: 10%;
+  right: 10%;
+  background: #14272df5;
+  border: 1px solid #6dada977;
+  padding: 18px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 100;
+}
 .live-desk {
   min-width: 0;
   overflow: hidden;

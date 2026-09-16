@@ -20,20 +20,58 @@ const app = await electron.launch({
   env: { ...process.env, OPENAI_API_KEY: "", AEGIS_DATA_DIR: dataDir },
   timeout: 60000,
 });
+const watchdog = setTimeout(() => {
+  console.error("Voice UI fixture exceeded its 90-second limit.");
+  app.process().kill();
+  process.exit(1);
+}, 90000);
+watchdog.unref();
 try {
   const page = await app.firstWindow();
   await page.waitForFunction(() => window.aegis);
+  await page.evaluate(() =>
+    window.aegis.invoke("settings.update", {
+      useSecondDisplay: false,
+      launchFullscreen: false,
+    }),
+  );
   const state = await page.evaluate(() => window.aegis.invoke("state"));
   state.settings.hasApiKey = true;
   state.settings.voiceOnStartup = true;
-  await app.evaluate(({ ipcMain }, state) => {
+  await app.evaluate(async ({ ipcMain, BrowserWindow, app }, state) => {
+    const path = process.getBuiltinModule("node:path");
+    const require = process
+      .getBuiltinModule("node:module")
+      .createRequire(path.join(app.getAppPath(), "package.json"));
+    const { createAppControl, spokenNavigation } = require(
+      path.join(app.getAppPath(), "server/app-control.mjs"),
+    );
     globalThis.voiceTest = { state, sessions: 0, polls: 0, fail: false };
+    const host = BrowserWindow.getAllWindows()[0];
+    const control = createAppControl({
+      desktop: {
+        publishControl: (value) =>
+          host.webContents.send("aegis:control", value),
+      },
+      overview: () => ({}),
+      activity: async () => {},
+    });
     ipcMain.removeHandler("aegis:invoke");
     ipcMain.handle("aegis:invoke", (_, operation, payload) => {
       const test = globalThis.voiceTest;
       if (operation === "app.view" || operation === "app.control.ack") {
         test.view = payload;
-        return { accepted: true };
+        return operation === "app.view"
+          ? control.update(payload)
+          : control.ack(payload);
+      }
+      if (operation === "startup.briefing") return { status: "disabled" };
+      if (operation === "plugins.catalog") return { plugins: [] };
+      if (operation === "app.voice.navigate") {
+        const target = spokenNavigation(payload.text);
+        return target
+          ? control.execute({ action: "navigate", target })
+          : { handled: false };
       }
       if (operation === "state") {
         test.polls++;
@@ -114,6 +152,7 @@ try {
             }
           },
         });
+        window.voiceChannel = channel;
         return channel;
       }
       async createOffer() {
@@ -164,14 +203,28 @@ try {
     .getByRole("button", { name: "Chat ausblenden", exact: true })
     .click();
   await expect(page.locator("#aegis-conversation")).toHaveCount(0);
-  await app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].webContents.send("aegis:control", {
-      id: "test-nav",
-      action: "navigate",
-      target: "settings",
+  await page.evaluate(() =>
+    window.voiceChannel.onmessage({
+      data: JSON.stringify({
+        type: "conversation.item.input_audio_transcription.completed",
+        transcript: "Geh mal in die Einstellungen",
+      }),
     }),
   );
   await expect(page.locator("h1")).toContainText("Systemeinstellungen");
+  await expect
+    .poll(() => app.evaluate(() => globalThis.voiceTest.view?.voiceStatus))
+    .toBe("speaking");
+  assert.equal(await app.evaluate(() => globalThis.voiceTest.sessions), 1);
+  await page.evaluate(() =>
+    window.voiceChannel.onmessage({
+      data: JSON.stringify({
+        type: "conversation.item.input_audio_transcription.completed",
+        transcript: "Aegis, öffne die Plugins",
+      }),
+    }),
+  );
+  await expect(page.locator(".plugin-hub")).toBeVisible();
   await expect
     .poll(() => app.evaluate(() => globalThis.voiceTest.view?.voiceStatus))
     .toBe("speaking");
@@ -245,4 +298,5 @@ try {
   );
 } finally {
   await app.close();
+  clearTimeout(watchdog);
 }
